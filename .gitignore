@@ -11,6 +11,8 @@ lab0-setup/.vscode/settings.json
 lab1-vector/.vscode/c_cpp_properties.json
 lab1-vector/.vscode/launch.json
 lab1-vector/.vscode/settings.json
+*.o
+*.zip
 
 # lab0-setup/Makefile
 # lab0-setup/device-query
