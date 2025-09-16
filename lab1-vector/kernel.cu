@@ -41,3 +41,15 @@ void image2grayKernel(float *in, float *out, int height, int width)
 	//INSERT KERNEL CODE HERE, BE CAREFUL FOR CORNER CASE!!!
 	
 }
+
+__global__
+__launch_bounds__(256)
+void vecAdd4(const float4* __restrict__ A, const float4* __restrict__ B, float4* __restrict__ C, int vectorizedN) {
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx < vectorizedN) {
+		float4 a = A[idx];
+		float4 b = B[idx];
+		C[idx] = make_float4(a.x + b.x, a.y + b.y, a.z + b.z, + a.w + b.w);
+	}
+
+}
