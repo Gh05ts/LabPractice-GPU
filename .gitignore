@@ -1,2 +1,25 @@
-*.zip
-*.o
+__MACOSX/._lab1-vector
+__MACOSX/lab1-vector/._Makefile
+__MACOSX/lab1-vector/._image_to_gray.cu
+__MACOSX/lab1-vector/._kernel.cu
+__MACOSX/lab1-vector/._support.cu
+__MACOSX/lab1-vector/._support.h
+__MACOSX/lab1-vector/._vector_add.cu
+lab0-setup/.vscode/c_cpp_properties.json
+lab0-setup/.vscode/launch.json
+lab0-setup/.vscode/settings.json
+lab1-vector/.vscode/c_cpp_properties.json
+lab1-vector/.vscode/launch.json
+lab1-vector/.vscode/settings.json
+
+# lab0-setup/Makefile
+# lab0-setup/device-query
+# lab0-setup/main.cu
+# lab1-vector/Makefile
+# lab1-vector/image2gray
+# lab1-vector/image_to_gray.cu
+# lab1-vector/kernel.cu
+# lab1-vector/support.cu
+# lab1-vector/support.h
+# lab1-vector/vecadd
+# lab1-vector/vector_add.cu
