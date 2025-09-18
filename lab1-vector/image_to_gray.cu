@@ -97,10 +97,12 @@ int main(int argc, char **argv)
 	// AOS by default
 	float3 *in_d; 
 	// float *in_d;
-	float *out_d; 
+	float4 *out_d;
+	// float *out_d; 
 	
 	cudaMalloc((void **) &in_d, sizeof(float3)*image_height*image_width);
-	cudaMalloc((void **) &out_d, out_data_bytes); // image_width*image_height/4 * sizeof(float4)
+	cudaMalloc((void **) &out_d, image_width*image_height/4 * sizeof(float4)); // out_data_bytes
+	// image_width*image_height/4 * sizeof(float4)
 
 	cudaStream_t stream;
 	cudaStreamCreate(&stream);
