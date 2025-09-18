@@ -9,7 +9,7 @@ vector_add.o: vector_add.cu kernel.cu support.h
 	$(NVCC) -c -o $@ vector_add.cu $(NVCC_FLAGS)
 
 image_to_gray.o: image_to_gray.cu kernel.cu support.h
-	$(NVCC) -c -o $@ image_to_gray.cu $(NVCC_FLAGS)
+	$(NVCC) -c -o $@ image_to_gray.cu $(NVCC_FLAGS) -use_fast_math
 
 support.o: support.cu support.h
 	$(NVCC) -c -o $@ support.cu $(NVCC_FLAGS)

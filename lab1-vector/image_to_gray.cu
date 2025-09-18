@@ -67,7 +67,9 @@ int main(int argc, char **argv)
 	const size_t in_data_bytes = sizeof(float) *image_height *image_width * 3;
 	const size_t out_data_bytes = sizeof(float) *image_height * image_width;
 	// 3-channel image with H/W dimensions
-	float *in_h = (float*) malloc(in_data_bytes);
+	float *in_h; 
+	// (float*) malloc(in_data_bytes);
+	cudaHostAlloc(&in_h, in_data_bytes, cudaHostAllocDefault);
 	for (unsigned int i = 0; i < image_height; i++)
 	{
 		for (unsigned int j = 0; j < image_width; j++)
@@ -79,7 +81,9 @@ int main(int argc, char **argv)
 	}
 
 	// 1-channel image with H/W dimensions
-	float *out_h = (float*) malloc(out_data_bytes);
+	float *out_h;
+	cudaHostAlloc(&out_h, out_data_bytes, cudaHostAllocDefault);
+	// = (float*) malloc(out_data_bytes);
 
 	stopTime(&timer);
 	printf("%f s\n", elapsedTime(timer));
@@ -90,12 +94,18 @@ int main(int argc, char **argv)
 	fflush(stdout);
 	startTime(&timer);
 	//INSERT CODE HERE
-	float *in_d, *out_d; 
+	// AOS by default
+	float3 *in_d; 
+	// float *in_d;
+	float *out_d; 
 	
-	cudaMalloc((void **) &in_d, in_data_bytes);
-	cudaMalloc((void **) &out_d, out_data_bytes);
+	cudaMalloc((void **) &in_d, sizeof(float3)*image_height*image_width);
+	cudaMalloc((void **) &out_d, out_data_bytes); // image_width*image_height/4 * sizeof(float4)
 
-	cudaDeviceSynchronize();
+	cudaStream_t stream;
+	cudaStreamCreate(&stream);
+
+	// cudaDeviceSynchronize();
 	stopTime(&timer);
 	printf("%f s\n", elapsedTime(timer));
 
@@ -104,20 +114,31 @@ int main(int argc, char **argv)
 	fflush(stdout);
 	startTime(&timer);
 	//INSERT CODE HERE
-	cudaMemcpy(in_d, in_h, in_data_bytes, cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(in_d, in_h, in_data_bytes, cudaMemcpyHostToDevice, stream);
 
-	cudaDeviceSynchronize();
+	// cudaDeviceSynchronize();
 	stopTime(&timer);
 	printf("%f s\n", elapsedTime(timer));
+
+	int minGrid, optBlock;
+	cudaOccupancyMaxPotentialBlockSize(
+		&minGrid,      // returns the minimum grid size needed to achieve max occupancy
+		&optBlock,     // returns the block size that achieves max occupancy
+		image2grayKernelOpt,       // your kernel pointer
+		0,             // dynamic shared mem per block
+		image_height*image_width           // maximum threads you’ll launch
+	);
+	// Then:
+	int gridSize = (image_height*image_width + optBlock - 1) / optBlock;
 
 	// Launch kernel ----------------------------------------------------------
 	printf("Launching kernel...");
 	fflush(stdout);
 	startTime(&timer);
 	//INSERT CODE HERE
-	dim3 dimGrid(ceil(image_height/16.0), ceil(image_width/16.0), 1);
-	dim3 dimBlock(16, 16, 1);
-	image2grayKernel<<<dimGrid, dimBlock>>>(in_d, out_d, image_height, image_width);
+	// dim3 dimGrid(ceil(image_height/16.0), ceil(image_width/16.0), 1);
+	// dim3 dimBlock(16, 16, 1);
+	image2grayKernelOpt<<<gridSize, optBlock>>>(in_d, out_d, image_height, image_width);
 
 	cuda_ret = cudaDeviceSynchronize();
 	if (cuda_ret != cudaSuccess) FATAL("Unable to launch kernel");
@@ -129,10 +150,13 @@ int main(int argc, char **argv)
 	fflush(stdout);
 	startTime(&timer);
 	//INSERT CODE HERE
-	cudaMemcpy(out_h, out_d, out_data_bytes, cudaMemcpyDeviceToHost);
-	
+	cudaMemcpyAsync(out_h, out_d, out_data_bytes, cudaMemcpyDeviceToHost, stream);
 
-	cudaDeviceSynchronize();
+	cudaStreamSynchronize(stream);
+
+	// printf("HERE -> %f", out_h[0]);
+
+	// cudaDeviceSynchronize();
 	stopTime(&timer);
 	printf("%f s\n", elapsedTime(timer));
 
@@ -142,9 +166,12 @@ int main(int argc, char **argv)
 	verify(in_h, out_h, image_height, image_width);
 
 	// Free memory ------------------------------------------------------------
-	free(in_h);
-	free(out_h);
+	cudaStreamDestroy(stream);
+	cudaFree(in_h);
+	cudaFree(out_h);
 	//INSERT CODE HERE
+	cudaFree(out_d);
+	cudaFree(in_d);
 	
 
 	return 0;
