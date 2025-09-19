@@ -132,6 +132,9 @@ int main(int argc, char **argv)
 	);
 	// Then:
 	int gridSize = (image_height*image_width + optBlock - 1) / optBlock;
+	printf("optBlock: %d\n", optBlock);
+	printf("optGrid: %d\n", gridSize);
+	fflush(stdout);
 
 	// Launch kernel ----------------------------------------------------------
 	printf("Launching kernel...");
