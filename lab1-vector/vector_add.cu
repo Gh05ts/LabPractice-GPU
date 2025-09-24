@@ -73,8 +73,17 @@ int main(int argc, char **argv)
 
 	// float *C_h = (float*) malloc(sizeof(float) *n);
 
+	int paddedN = n;
+	if (n % 4 == 1) {
+		paddedN = n + 3;
+	} else if (n % 4 == 2) {
+		paddedN = n + 2;
+	} else if (n % 4 == 3) {
+		paddedN = n + 1;
+	}
+
 	float *A_h; 
-	cudaHostAlloc(&A_h, sizeof(float) * n, cudaHostAllocDefault);
+	cudaHostAlloc(&A_h, sizeof(float) * paddedN, cudaHostAllocDefault);
 	for (unsigned int i = 0; i < n; i++)
 	{
 		A_h[i] = (rand() % 100) / 100.00;
@@ -82,14 +91,14 @@ int main(int argc, char **argv)
 
 
 	float *B_h;
-	cudaHostAlloc(&B_h, sizeof(float) * n, cudaHostAllocDefault);
+	cudaHostAlloc(&B_h, sizeof(float) * paddedN, cudaHostAllocDefault);
 	for (unsigned int i = 0; i < n; i++)
 	{
 		B_h[i] = (rand() % 100) / 100.00;
 	}
 
 	float *C_h;
-	cudaHostAlloc(&C_h, sizeof(float) * n, cudaHostAllocDefault);
+	cudaHostAlloc(&C_h, sizeof(float) * paddedN, cudaHostAllocDefault);
 	for (unsigned int i = 0; i < n; i++)
 	{
 		C_h[i] = (rand() % 100) / 100.00;
@@ -104,7 +113,7 @@ int main(int argc, char **argv)
 	fflush(stdout);
 	startTime(&timer);
 	//INSERT CODE HERE
-	const int V4_N     = n / 4;
+	const int V4_N     = paddedN / 4;
 	int size = V4_N * sizeof(float4);
 	const int BLOCK_SZ = 256;
 	const int GRID_SZ = (V4_N + BLOCK_SZ - 1) / BLOCK_SZ;
@@ -162,6 +171,11 @@ int main(int argc, char **argv)
 	//INSERT CODE HERE
 	// vecAddKernel<<<ceil(n/256.0), 256>>>(d_A4, d_B4, d_C4, n);
 	vecAdd4<<<gridSize, optBlock>>>(d_A4, d_B4, d_C4, V4_N);
+	// int leftover = 4*V4_N;
+	// int nLeftover = n - leftover;
+	// if (nLeftover > 0) {
+	// 	vecAddTail<<<1, 32>>>(d_A4, d_B4, d_C4, leftover, n);
+	// }
 
 	// cuda_ret = cudaDeviceSynchronize();
 	// if (cuda_ret != cudaSuccess) FATAL("Unable to launch kernel");
@@ -187,7 +201,7 @@ int main(int argc, char **argv)
 	startTime(&timer);
 	//INSERT CODE HERE
 	// cudaMemcpy(C_h, d_C4, size, cudaMemcpyDeviceToHost);
-	cudaMemcpyAsync(C_h, d_C4, n * sizeof(float), cudaMemcpyDeviceToHost, stream);
+	cudaMemcpyAsync(C_h, d_C4, paddedN * sizeof(float), cudaMemcpyDeviceToHost, stream);
 
 	cudaStreamSynchronize(stream);
 
@@ -198,6 +212,15 @@ int main(int argc, char **argv)
 	// Verify correctness -----------------------------------------------------
 	printf("Verifying results...");
 	fflush(stdout);
+
+	// handle edge cases here
+	// if(n % 4 == 1) {
+	// 	C_h[n-1] = A_h[n-1] + B_h[n-1];
+	// } else if (n % 4 == 2) {
+
+	// } else {
+
+	// }
 	verify(A_h, B_h, C_h, n);
 
 
