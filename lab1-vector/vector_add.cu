@@ -91,6 +91,8 @@ int main(int argc, char **argv)
 	printf("Allocating device variables...");
 	fflush(stdout);
 	startTime(&timer);
+	// fflush(stdout);
+
 	//INSERT CODE HERE
 	const int V4_N     = paddedN / 4;
 	int size = V4_N * sizeof(float4);
@@ -106,10 +108,10 @@ int main(int argc, char **argv)
 		V4_N           // maximum threads you’ll launch
 	);
 	int gridSize = (V4_N + optBlock - 1) / optBlock;
-
+	
 	// printf("optBlock: %d\n", optBlock);
 	// printf("optGrid: %d\n", gridSize);
-	fflush(stdout);
+	// fflush(stdout);
 
 	float4 *d_A4, *d_B4, *d_C4;
 
