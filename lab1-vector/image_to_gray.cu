@@ -35,7 +35,6 @@ void verify(float *A, float *B, int height, int width)
 int main(int argc, char **argv)
 {
 	Timer timer;
-	cudaError_t cuda_ret;
 
 	// Initialize host variables ----------------------------------------------
 
@@ -159,8 +158,6 @@ int main(int argc, char **argv)
 	// dim3 dimBlock(16, 16, 1);
 	image2grayKernelOpt<<<gridSize, optBlock>>>(in_d, out_d, image_height, image_width);
 
-	cuda_ret = cudaDeviceSynchronize();
-	if (cuda_ret != cudaSuccess) FATAL("Unable to launch kernel");
 	stopTime(&timer);
 	printf("%f s\n", elapsedTime(timer));
 
