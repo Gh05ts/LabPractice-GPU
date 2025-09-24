@@ -63,25 +63,6 @@ int main(int argc, char **argv)
 		exit(0);
 	}
 
-	// Adding padding to make input compatible with %4 because using 4 elements at a time to optimize memory
-	// int padded_image_height = image_height;
-	// if(image_height % 4 == 1) {
-	// 	padded_image_height += 3;
-	// } else if (image_height % 4 == 2) {
-	// 	padded_image_height += 2;
-	// } else if(image_height % 4 == 3) {
-	// 	padded_image_height += 1;
-	// }
-
-	// int padded_image_width = image_width;
-	// if(image_width % 4 == 1) {
-	// 	padded_image_width += 3;
-	// } else if (image_width % 4 == 2) {
-	// 	padded_image_width += 2;
-	// } else if(image_width % 4 == 3) {
-	// 	padded_image_width += 1;
-	// }
-
 	const size_t in_data_bytes = sizeof(float) *image_height *image_width * 3;
 	const size_t out_data_bytes = sizeof(float) *image_height * image_width;
 	// 3-channel image with H/W dimensions
@@ -145,9 +126,6 @@ int main(int argc, char **argv)
 	);
 
 	int gridSize = (image_height*image_width + optBlock - 1) / optBlock;
-	// printf("optBlock: %d\n", optBlock);
-	// printf("optGrid: %d\n", gridSize);
-	// fflush(stdout);
 
 	// Launch kernel ----------------------------------------------------------
 	printf("Launching kernel...");
@@ -156,6 +134,7 @@ int main(int argc, char **argv)
 	//INSERT CODE HERE
 	// dim3 dimGrid(ceil(image_height/16.0), ceil(image_width/16.0), 1);
 	// dim3 dimBlock(16, 16, 1);
+	// using 1d instead of 2d, because this was faster
 	image2grayKernelOpt<<<gridSize, optBlock>>>(in_d, out_d, image_height, image_width);
 
 	stopTime(&timer);

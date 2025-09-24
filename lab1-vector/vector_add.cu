@@ -55,7 +55,7 @@ int main(int argc, char **argv)
 		exit(0);
 	}
 
-	// padding extra values to make compatible with %4 for memory coalescing
+	// padding extra values to make compatible with %4 for memory coalescing using float4
 	int paddedN = n;
 	if (n % 4 == 1) {
 		paddedN = n + 3;
@@ -65,6 +65,7 @@ int main(int argc, char **argv)
 		paddedN = n + 1;
 	}
 
+	// using cudaHostAlloc for pinned memory
 	float *A_h; 
 	cudaHostAlloc(&A_h, sizeof(float) * paddedN, cudaHostAllocDefault);
 	for (unsigned int i = 0; i < n; i++)
@@ -91,14 +92,16 @@ int main(int argc, char **argv)
 	printf("Allocating device variables...");
 	fflush(stdout);
 	startTime(&timer);
-	// fflush(stdout);
 
 	//INSERT CODE HERE
 	const int V4_N     = paddedN / 4;
 	int size = V4_N * sizeof(float4);
+
+	// manual allocation if not using the nvidia api
 	// const int BLOCK_SZ = 256;
 	// const int GRID_SZ = (V4_N + BLOCK_SZ - 1) / BLOCK_SZ;
 
+	// using this api for helping in selecting best thread block size and no. of blocks
 	int minGrid, optBlock;
 	cudaOccupancyMaxPotentialBlockSize(
 		&minGrid,      // returns the minimum grid size needed to achieve max occupancy
@@ -108,10 +111,6 @@ int main(int argc, char **argv)
 		V4_N           // maximum threads you’ll launch
 	);
 	int gridSize = (V4_N + optBlock - 1) / optBlock;
-	
-	// printf("optBlock: %d\n", optBlock);
-	// printf("optGrid: %d\n", gridSize);
-	// fflush(stdout);
 
 	float4 *d_A4, *d_B4, *d_C4;
 
@@ -119,6 +118,7 @@ int main(int argc, char **argv)
 	cudaMalloc((void **) &d_B4, size);
 	cudaMalloc((void **) &d_C4, size);
 	
+	// creating stream to avoid sync between CPU and GPU, everything is passed in async manner and synced one time at the end
 	cudaStream_t stream;
     cudaStreamCreate(&stream);
 
