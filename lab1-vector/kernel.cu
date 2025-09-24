@@ -42,6 +42,7 @@ void image2grayKernel(const float *in, float *out, int height, int width)
 	
 }
 
+// Optimized code for float3/4 for memory coalescing
 __global__
 __launch_bounds__(256)
 void vecAdd4(const float4* __restrict__ A, const float4* __restrict__ B, float4* __restrict__ C, const int vectorizedN) {
@@ -53,16 +54,7 @@ void vecAdd4(const float4* __restrict__ A, const float4* __restrict__ B, float4*
 	}
 }
 
-__global__
-__launch_bounds__(256)
-void vecAddTail(const float* __restrict__ A, const float* __restrict__ B, float* __restrict__ C, const int startIdx, const int vectorizedN) {
-	// int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	int i = startIdx + blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < vectorizedN) {
-        C[i] = A[i] + B[i];
-    }
-}
-
+// Optimized code for float3/4 for memory coalescing
 __global__
 __launch_bounds__(256)
 void image2grayKernelOpt(const float3* __restrict__ in, float4* __restrict__ out, const int height, const int width)
@@ -71,33 +63,12 @@ void image2grayKernelOpt(const float3* __restrict__ in, float4* __restrict__ out
 	//INSERT KERNEL CODE HERE
 	int col = blockIdx.x*blockDim.x + threadIdx.x; // * 4
 	int colOffset = col * 4;
-	// int row = blockIdx.y*blockDim.y 
 
 	if(colOffset + 3 < width * height) {
-		// int grayOffset = row*width + col;
-		// int colOffset = 
-		// int rgbOffset = grayOffset*3; // channels = 3
-		// unsigned char r = in[rgbOffset];
-		// unsigned char g = in[rgbOffset + 1];
-		// unsigned char b = in[rgbOffset + 2];
-
-		// printf("%f\n", in[col].x);
-		// printf("%f\n", in[col].y);
-		// printf("%f\n", in[col].z);
-		// out[grayOffset] = 0.144f*in[grayOffset].x+ 0.587f*in[grayOffset].y + 0.299f*in[grayOffset].z;
-		// make_float4();
-		// out[col] = 0.144f*in[col].x+ 0.587f*in[col].y + 0.299f*in[col].z;
 		out[col] = make_float4(
 			0.144f*in[colOffset].x+ 0.587f*in[colOffset].y + 0.299f*in[colOffset].z, 
 			0.144f*in[colOffset + 1].x+ 0.587f*in[colOffset + 1].y + 0.299f*in[colOffset + 1].z, 
 			0.144f*in[colOffset + 2].x+ 0.587f*in[colOffset + 2].y + 0.299f*in[colOffset + 2].z, 
 			0.144f*in[colOffset + 3].x+ 0.587f*in[colOffset + 3].y + 0.299f*in[colOffset + 3].z);
-		// out[col + 1] = 0.144f*in[col + 1].x+ 0.587f*in[col + 1].y + 0.299f*in[col + 1].z;
-		// out[col + 1] = 0.144f*in[col + 2].x+ 0.587f*in[col + 2].y + 0.299f*in[col + 2].z;
-		// out[col + 1] = 0.144f*in[col + 3].x+ 0.587f*in[col + 3].y + 0.299f*in[col + 3].z;
-		// printf("%f/n/n/n", out[col]);
-	}
-	// Use global index to determine which elements to read, add, and write ---
-	//INSERT KERNEL CODE HERE, BE CAREFUL FOR CORNER CASE!!!
-	
+	}	
 }

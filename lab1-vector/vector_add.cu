@@ -9,9 +9,6 @@
 #include "support.h"
 #include "kernel.cu"
 
-// #include "npp.h" 
-// #include "nppi.h"
-
 void verify(float *A, float *B, float *C, int n)
 {
 	const float relativeTolerance = 1e-6;
@@ -59,20 +56,7 @@ int main(int argc, char **argv)
 		exit(0);
 	}
 
-	// float *A_h = (float*) malloc(sizeof(float) *n);
-	// for (unsigned int i = 0; i < n; i++)
-	// {
-	// 	A_h[i] = (rand() % 100) / 100.00;
-	// }
-
-	// float *B_h = (float*) malloc(sizeof(float) *n);
-	// for (unsigned int i = 0; i < n; i++)
-	// {
-	// 	B_h[i] = (rand() % 100) / 100.00;
-	// }
-
-	// float *C_h = (float*) malloc(sizeof(float) *n);
-
+	// padding extra values to make compatible with %4 for memory coalescing
 	int paddedN = n;
 	if (n % 4 == 1) {
 		paddedN = n + 3;
@@ -99,10 +83,6 @@ int main(int argc, char **argv)
 
 	float *C_h;
 	cudaHostAlloc(&C_h, sizeof(float) * paddedN, cudaHostAllocDefault);
-	for (unsigned int i = 0; i < n; i++)
-	{
-		C_h[i] = (rand() % 100) / 100.00;
-	}
 
 	stopTime(&timer);
 	printf("%f s\n", elapsedTime(timer));
@@ -126,14 +106,12 @@ int main(int argc, char **argv)
 		0,             // dynamic shared mem per block
 		V4_N           // maximum threads you’ll launch
 	);
-	// Then:
 	int gridSize = (V4_N + optBlock - 1) / optBlock;
 
 	printf("optBlock: %d\n", optBlock);
 	printf("optGrid: %d\n", gridSize);
 	fflush(stdout);
 
-	// float *A_d, *B_d, *C_d;
 	float4 *d_A4, *d_B4, *d_C4;
 
 	cudaMalloc((void **) &d_A4, size);
@@ -143,7 +121,6 @@ int main(int argc, char **argv)
 	cudaStream_t stream;
     cudaStreamCreate(&stream);
 
-	// cudaDeviceSynchronize();
 	stopTime(&timer);
 	printf("%f s\n", elapsedTime(timer));
 
@@ -151,16 +128,11 @@ int main(int argc, char **argv)
 	printf("Copying data from host to device...");
 	fflush(stdout);
 	startTime(&timer);
-	//INSERT CODE HERE
-	// cudaMemcpy(d_A4, A_h, size, cudaMemcpyHostToDevice);
-	// cudaMemcpy(d_B4, B_h, size, cudaMemcpyHostToDevice);
 
+	//INSERT CODE HERE
 	cudaMemcpyAsync(d_A4, A_h, n * sizeof(float), cudaMemcpyHostToDevice, stream);
 	cudaMemcpyAsync(d_B4, B_h, n * sizeof(float), cudaMemcpyHostToDevice, stream);
 
-	// nppiRGBToGray_16s_AC4C1R();
-
-	// cudaDeviceSynchronize();
 	stopTime(&timer);
 	printf("%f s\n", elapsedTime(timer));
 
@@ -171,41 +143,20 @@ int main(int argc, char **argv)
 	//INSERT CODE HERE
 	// vecAddKernel<<<ceil(n/256.0), 256>>>(d_A4, d_B4, d_C4, n);
 	vecAdd4<<<gridSize, optBlock>>>(d_A4, d_B4, d_C4, V4_N);
-	// int leftover = 4*V4_N;
-	// int nLeftover = n - leftover;
-	// if (nLeftover > 0) {
-	// 	vecAddTail<<<1, 32>>>(d_A4, d_B4, d_C4, leftover, n);
-	// }
 
-	// cuda_ret = cudaDeviceSynchronize();
-	// if (cuda_ret != cudaSuccess) FATAL("Unable to launch kernel");
 	stopTime(&timer);
 	printf("%f s\n", elapsedTime(timer));
-
-	//     // Compute floating point operations per second.
-    // int nFlops = n;
-    // float nFlopsPerSec = nFlops/elapsedTime(timer);
-    // float nGFlopsPerSec = nFlopsPerSec*1e-9;
-
-	// // Compute transfer rates.
-    // int nBytes = 3*4*n; // 2N words in, 1N word out
-    // double nBytesPerSec = nBytes/elapsedTime(timer);
-    // double nGBytesPerSec = nBytesPerSec*1e-9;
-
-    // printf( "Time: %lf (sec), GFlopsS: %lf, GBytesS: %lf\n", 
-    //          elapsedTime(timer), nGFlopsPerSec, nGBytesPerSec);
 
 	// Copy device variables from host ----------------------------------------
 	printf("Copying data from device to host...");
 	fflush(stdout);
 	startTime(&timer);
 	//INSERT CODE HERE
-	// cudaMemcpy(C_h, d_C4, size, cudaMemcpyDeviceToHost);
 	cudaMemcpyAsync(C_h, d_C4, paddedN * sizeof(float), cudaMemcpyDeviceToHost, stream);
 
+	// only one sync between CPU and GPU
 	cudaStreamSynchronize(stream);
 
-	// cudaDeviceSynchronize();
 	stopTime(&timer);
 	printf("%f s\n", elapsedTime(timer));
 
@@ -213,27 +164,15 @@ int main(int argc, char **argv)
 	printf("Verifying results...");
 	fflush(stdout);
 
-	// handle edge cases here
-	// if(n % 4 == 1) {
-	// 	C_h[n-1] = A_h[n-1] + B_h[n-1];
-	// } else if (n % 4 == 2) {
-
-	// } else {
-
-	// }
 	verify(A_h, B_h, C_h, n);
 
-
 	// Free memory ------------------------------------------------------------
+	//INSERT CODE HERE
 	cudaStreamDestroy(stream);
 	
-	// free(A_h);
-	// free(B_h);
-	// free(C_h);
 	cudaFreeHost(A_h);
 	cudaFreeHost(B_h);
 	cudaFreeHost(C_h);
-	//INSERT CODE HERE
 	cudaFree(d_A4);
 	cudaFree(d_B4);
 	cudaFree(d_C4);

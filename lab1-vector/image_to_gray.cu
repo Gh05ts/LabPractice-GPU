@@ -114,14 +114,11 @@ int main(int argc, char **argv)
 	startTime(&timer);
 	//INSERT CODE HERE
 	// AOS by default
-	float3 *in_d; 
-	// float *in_d;
+	float3 *in_d;
 	float4 *out_d;
-	// float *out_d; 
-	
+
 	cudaMalloc((void **) &in_d, sizeof(float3)*padded_image_height*padded_image_width);
 	cudaMalloc((void **) &out_d, padded_image_width*padded_image_height/4 * sizeof(float4)); // out_data_bytes
-	// image_width*image_height/4 * sizeof(float4)
 
 	cudaStream_t stream;
 	cudaStreamCreate(&stream);
