@@ -57,18 +57,22 @@ void vecAdd4(const float4* __restrict__ A, const float4* __restrict__ B, float4*
 // Optimized code for float3/4 for memory coalescing
 __global__
 __launch_bounds__(256)
-void image2grayKernelOpt(const float3* __restrict__ in, float4* __restrict__ out, const int height, const int width)
+void image2grayKernelOpt(const float3* __restrict__ in, float* __restrict__ out, const int height, const int width)
 {
 	// Calculate global thread index based on the block and thread indices ----
 	//INSERT KERNEL CODE HERE
-	int col = blockIdx.x*blockDim.x + threadIdx.x; // * 4
-	int colOffset = col * 4;
+	int idx = blockIdx.x*blockDim.x + threadIdx.x; // * 4
+	out[idx] = 0.144f*in[idx].x+ 0.587f*in[idx].y + 0.299f*in[idx].z;
+	
+	// old code works fine, but removing it because verify will need to be changed
+	// tried packing 4 outputs in one thread
 
-	if(colOffset + 3 < width * height) {
-		out[col] = make_float4(
-			0.144f*in[colOffset].x+ 0.587f*in[colOffset].y + 0.299f*in[colOffset].z, 
-			0.144f*in[colOffset + 1].x+ 0.587f*in[colOffset + 1].y + 0.299f*in[colOffset + 1].z, 
-			0.144f*in[colOffset + 2].x+ 0.587f*in[colOffset + 2].y + 0.299f*in[colOffset + 2].z, 
-			0.144f*in[colOffset + 3].x+ 0.587f*in[colOffset + 3].y + 0.299f*in[colOffset + 3].z);
-	}	
+	// int colOffset = col * 4;
+	// if(colOffset + 3 < width * height) {
+	// 	out[col] = make_float4(
+	// 		0.144f*in[colOffset].x+ 0.587f*in[colOffset].y + 0.299f*in[colOffset].z, 
+	// 		0.144f*in[colOffset + 1].x+ 0.587f*in[colOffset + 1].y + 0.299f*in[colOffset + 1].z, 
+	// 		0.144f*in[colOffset + 2].x+ 0.587f*in[colOffset + 2].y + 0.299f*in[colOffset + 2].z, 
+	// 		0.144f*in[colOffset + 3].x+ 0.587f*in[colOffset + 3].y + 0.299f*in[colOffset + 3].z);
+	// }	
 }

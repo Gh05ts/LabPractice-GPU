@@ -30,7 +30,6 @@ void verify(float *A, float *B, float *C, int n)
 int main(int argc, char **argv)
 {
 	Timer timer;
-	cudaError_t cuda_ret;
 
 	// Initialize host variables ----------------------------------------------
 
@@ -95,8 +94,8 @@ int main(int argc, char **argv)
 	//INSERT CODE HERE
 	const int V4_N     = paddedN / 4;
 	int size = V4_N * sizeof(float4);
-	const int BLOCK_SZ = 256;
-	const int GRID_SZ = (V4_N + BLOCK_SZ - 1) / BLOCK_SZ;
+	// const int BLOCK_SZ = 256;
+	// const int GRID_SZ = (V4_N + BLOCK_SZ - 1) / BLOCK_SZ;
 
 	int minGrid, optBlock;
 	cudaOccupancyMaxPotentialBlockSize(
@@ -108,8 +107,8 @@ int main(int argc, char **argv)
 	);
 	int gridSize = (V4_N + optBlock - 1) / optBlock;
 
-	printf("optBlock: %d\n", optBlock);
-	printf("optGrid: %d\n", gridSize);
+	// printf("optBlock: %d\n", optBlock);
+	// printf("optGrid: %d\n", gridSize);
 	fflush(stdout);
 
 	float4 *d_A4, *d_B4, *d_C4;
