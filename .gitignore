@@ -5,12 +5,16 @@ __MACOSX/lab1-vector/._kernel.cu
 __MACOSX/lab1-vector/._support.cu
 __MACOSX/lab1-vector/._support.h
 __MACOSX/lab1-vector/._vector_add.cu
+__MACOSX/*
 lab0-setup/.vscode/c_cpp_properties.json
 lab0-setup/.vscode/launch.json
 lab0-setup/.vscode/settings.json
 lab1-vector/.vscode/c_cpp_properties.json
 lab1-vector/.vscode/launch.json
 lab1-vector/.vscode/settings.json
+lab2-gemm/.vscode/c_cpp_properties.json
+lab2-gemm/.vscode/launch.json
+lab2-gemm/.vscode/settings.json
 *.o
 *.zip
 
