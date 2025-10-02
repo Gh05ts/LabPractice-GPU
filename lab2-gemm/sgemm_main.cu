@@ -92,8 +92,10 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-    
-
+    // *A_d, *B_d, *C_d
+    cudaMalloc((void **) &A_d, A_sz * sizeof(float));
+    cudaMalloc((void **) &B_d, B_sz * sizeof(float));
+    cudaMalloc((void **) &C_d, C_sz * sizeof(float));
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -106,8 +108,8 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-    
-
+    cudaMemcpy(A_d, A_h, A_sz * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(B_d, B_h, B_sz * sizeof(float), cudaMemcpyHostToDevice);
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -133,8 +135,7 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-    
-
+    cudaMemcpy(C_h, C_d, C_sz * sizeof(float), cudaMemcpyDeviceToHost);
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -154,9 +155,9 @@ int main(int argc, char *argv[])
     free(C_h);
 
     // INSERT CODE HERE
-   
-   
-   
+    cudaFree(A_d);
+    cudaFree(B_d);
+    cudaFree(C_d);
 
     return 0;
 }
