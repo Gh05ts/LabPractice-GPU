@@ -10,6 +10,7 @@
 
 // Feel free to use other numbers for best performance
 #define TILE_SIZE 16
+#define BLOCK_SIZE 32
 
 __global__ void mysgemm(int m, int n, int k, const float *A, const float *B, float *C)
 {
@@ -26,9 +27,22 @@ __global__ void mysgemm(int m, int n, int k, const float *A, const float *B, flo
      ********************************************************************/
 
     // INSERT KERNEL CODE HERE
+    const uint row = blockIdx.y * blockDim.y + threadIdx.y;
+    const uint col = blockIdx.x * blockDim.x + threadIdx.x;
 
+    // __syncthreads();
+    // printf("cRow -> %d", cRow);
+    // __syncthreads();
+    // printf("cCol -> %d", cCol);
+    // __syncthreads();
 
-
+    float sum = 0.0;
+    if(row < m && col < n) {
+        for(int i = 0; i < k; i++) {
+            sum += A[row*k + i] * B[i*n + col];
+        }
+        C[row*n+col] = sum;
+    }
 }
 
 void basicSgemm(char transa, char transb, int m, int n, int k, float alpha, const float *A, int lda, const float *B, int ldb, float beta, float *C, int ldc, int testRound)
@@ -59,16 +73,13 @@ void basicSgemm(char transa, char transb, int m, int n, int k, float alpha, cons
 
     // Initialize thread block and kernel grid dimensions ----------------------
     // INSERT CODE HERE
-    
-
-
+    dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
+    dim3 dimGrid((n + dimBlock.x - 1) / dimBlock.x, (m + dimBlock.y - 1)/ dimBlock.y);    
 
     for (int i = 0; i < testRound; i++) {
         // Invoke CUDA kernel --------------------------------------------------
         // INSERT CODE HERE
-        
-
-
+        mysgemm<<<dimGrid, dimBlock>>>(m, n, k, A, B, C);
         cudaDeviceSynchronize();
     }
 }

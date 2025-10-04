@@ -11,6 +11,14 @@
 #include "tgemm_kernel.cu"
 #include "support.h"
 
+
+void printMatrix(float *matrix, int rows) {
+    for (int i = 0; i < rows; i++) {
+        printf("%f ", matrix[i]);
+    }
+    printf("\n");
+}
+
 int main(int argc, char *argv[])
 {
 
@@ -92,8 +100,9 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-    
-
+    cudaMalloc((void **) &A_d, A_sz * sizeof(float));
+    cudaMalloc((void **) &B_d, B_sz * sizeof(float));
+    cudaMalloc((void **) &C_d, C_sz * sizeof(float));    
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -106,8 +115,8 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-    
-
+    cudaMemcpy(A_d, A_h, A_sz * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(B_d, B_h, B_sz * sizeof(float), cudaMemcpyHostToDevice);
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -117,6 +126,9 @@ int main(int argc, char *argv[])
     printf("Launching kernel...");
     fflush(stdout);
     startTime(&timer);
+    // printMatrix(A_h, A_sz);
+    // printMatrix(B_h, B_sz);
+    printf("\n");
     basicSgemm('N', 'N', matArow, matBcol, matBrow, 1.0f,
                A_d, matArow, B_d, matBrow, 0.0f, C_d, matBrow, testRound);
 
@@ -133,8 +145,7 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-    
-
+    cudaMemcpy(C_h, C_d, C_sz * sizeof(float), cudaMemcpyDeviceToHost);
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -154,8 +165,9 @@ int main(int argc, char *argv[])
     free(C_h);
 
     // INSERT CODE HERE
-
-
+    cudaFree(A_d);
+    cudaFree(B_d);
+    cudaFree(C_d);
 
     return 0;
 }

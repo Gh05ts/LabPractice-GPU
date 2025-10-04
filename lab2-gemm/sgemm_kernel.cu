@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 
-#define BLOCK_SIZE 16
+#define BLOCK_SIZE 32
 
 __global__ void mysgemm(int m, int n, int k, const float *A, const float *B, float *C)
 {
@@ -23,14 +23,14 @@ __global__ void mysgemm(int m, int n, int k, const float *A, const float *B, flo
      ********************************************************************/
 
     // INSERT KERNEL CODE HERE
-    float sum = 0;
     int row = blockIdx.y*blockDim.y + threadIdx.y;
     int col = blockIdx.x*blockDim.x + threadIdx.x;
-    if(row < k && col < k) {
+    if(row < m && col < n) {
+        float sum = 0.0;
         for(int i = 0; i < k; i++) {
-            sum += A[row*k+i] * B[i*k+col];
+            sum += A[row*k+i] * B[i*n+col];
         }
-        C[row*k+col] = sum;
+        C[row*n+col] = sum;
     }
 }
 
