@@ -11,6 +11,8 @@
 #include "tgemm_kernel.cu"
 #include "support.h"
 
+#define TILE_SIZE 32
+#define STREAMS 4
 
 void printMatrix(float *matrix, int rows) {
     for (int i = 0; i < rows; i++) {
@@ -38,6 +40,9 @@ int main(int argc, char *argv[])
     unsigned matBrow, matBcol;
     unsigned testRound; // how many rounds to run
     dim3 dim_grid, dim_block;
+    
+    int pMatARow, pMatACol, pMatBCol;
+    size_t Ap_sz, Bp_sz, Cp_sz;
 
     if (argc == 1)
     {
@@ -70,23 +75,43 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
+    pMatARow = ((matArow + TILE_SIZE - 1)/TILE_SIZE) * TILE_SIZE;
+    pMatACol = ((matAcol + TILE_SIZE - 1)/TILE_SIZE) * TILE_SIZE;
+    pMatBCol = ((matBcol + TILE_SIZE - 1)/TILE_SIZE) * TILE_SIZE;
+
     A_sz = matArow * matAcol;
     B_sz = matBrow * matBcol;
     C_sz = matArow * matBcol;
 
-    A_h = (float *)malloc(sizeof(float) * A_sz);
+    Ap_sz = pMatARow * pMatACol;
+    Bp_sz = pMatACol * pMatBCol;
+    Cp_sz = pMatARow * pMatBCol;
+
+    A_h = (float *)malloc(sizeof(float) * Ap_sz);
     for (unsigned int i = 0; i < A_sz; i++)
     {
         A_h[i] = (rand() % 100) / 100.00;
     }
+    if(Ap_sz >  A_sz) {
+        for (unsigned int i = A_sz; i < Ap_sz; i++)
+        {
+            A_h[i] = 0;
+        }        
+    }
 
-    B_h = (float *)malloc(sizeof(float) * B_sz);
+    B_h = (float *)malloc(sizeof(float) * Bp_sz);
     for (unsigned int i = 0; i < B_sz; i++)
     {
         B_h[i] = (rand() % 100) / 100.00;
     }
+    if(Bp_sz >  B_sz) {
+        for (unsigned int i = B_sz; i < Bp_sz; i++)
+        {
+            B_h[i] = 0;        
+        }
+    }
 
-    C_h = (float *)malloc(sizeof(float) * C_sz);
+    C_h = (float *)malloc(sizeof(float) * Cp_sz);
 
     stopTime(&timer);
     printf("%f s\n", elapsedTime(timer));
@@ -100,9 +125,9 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-    cudaMalloc((void **) &A_d, A_sz * sizeof(float));
-    cudaMalloc((void **) &B_d, B_sz * sizeof(float));
-    cudaMalloc((void **) &C_d, C_sz * sizeof(float));    
+    cudaMalloc((void **) &A_d, Ap_sz * sizeof(float));
+    cudaMalloc((void **) &B_d, Bp_sz * sizeof(float));
+    cudaMalloc((void **) &C_d, Cp_sz * sizeof(float));    
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -115,8 +140,8 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-    cudaMemcpy(A_d, A_h, A_sz * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(B_d, B_h, B_sz * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(A_d, A_h, Ap_sz * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(B_d, B_h, Bp_sz * sizeof(float), cudaMemcpyHostToDevice);
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -129,8 +154,8 @@ int main(int argc, char *argv[])
     // printMatrix(A_h, A_sz);
     // printMatrix(B_h, B_sz);
     printf("\n");
-    basicSgemm('N', 'N', matArow, matBcol, matBrow, 1.0f,
-               A_d, matArow, B_d, matBrow, 0.0f, C_d, matBrow, testRound);
+    basicSgemm('N', 'N', pMatARow, pMatBCol, pMatACol, 1.0f,
+               A_d, pMatARow, B_d, pMatACol, 0.0f, C_d, pMatACol, testRound);
 
     cuda_ret = cudaDeviceSynchronize();
     if (cuda_ret != cudaSuccess)
@@ -145,7 +170,7 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-    cudaMemcpy(C_h, C_d, C_sz * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(C_h, C_d, Cp_sz * sizeof(float), cudaMemcpyDeviceToHost);
 
     cudaDeviceSynchronize();
     stopTime(&timer);
