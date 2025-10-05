@@ -88,27 +88,23 @@ int main(int argc, char *argv[])
     Cp_sz = pMatARow * pMatBCol;
 
     A_h = (float *)malloc(sizeof(float) * Ap_sz);
-    for (unsigned int i = 0; i < A_sz; i++)
-    {
-        A_h[i] = (rand() % 100) / 100.00;
-    }
-    if(Ap_sz >  A_sz) {
-        for (unsigned int i = A_sz; i < Ap_sz; i++)
-        {
-            A_h[i] = 0;
-        }        
+    memset(A_h, 0, sizeof(A_h));
+    size_t j = 0;
+    for(size_t i = 0; i < matArow; i++) {
+        for(size_t k = 0; k < matAcol; k++) {
+            A_h[j + k] = (rand() % 100) / 100.00;
+        } 
+        j += pMatACol; 
     }
 
     B_h = (float *)malloc(sizeof(float) * Bp_sz);
-    for (unsigned int i = 0; i < B_sz; i++)
-    {
-        B_h[i] = (rand() % 100) / 100.00;
-    }
-    if(Bp_sz >  B_sz) {
-        for (unsigned int i = B_sz; i < Bp_sz; i++)
-        {
-            B_h[i] = 0;        
-        }
+    memset(B_h, 0, sizeof(B_h));
+    j = 0;
+    for(size_t i = 0; i < matBrow; i++) {
+        for(size_t k = 0; k < matBcol; k++) {
+            B_h[j + k] = (rand() % 100) / 100.00;
+        } 
+        j += pMatBCol;
     }
 
     C_h = (float *)malloc(sizeof(float) * Cp_sz);
@@ -181,7 +177,7 @@ int main(int argc, char *argv[])
     printf("Verifying results...");
     fflush(stdout);
 
-    verify(A_h, B_h, C_h, matArow, matAcol, matBcol);
+    verify(A_h, B_h, C_h, pMatARow, pMatACol, pMatBCol);
 
     // Free memory ------------------------------------------------------------
 
