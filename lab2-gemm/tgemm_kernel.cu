@@ -30,61 +30,19 @@ __global__ void mysgemm(int m, int n, int k, const float *A, const float *B, flo
     __shared__ float sA[TILE_SIZE][TILE_SIZE];
     __shared__ float sB[TILE_SIZE][TILE_SIZE];
 
-    // 2
-    // int lane = threadIdx.y * blockDim.x + threadIdx.x;
-    // int local_y = lane / TILE_SIZE;
-    // int local_x = lane % TILE_SIZE;
-
-    // 3
-    int local_x = threadIdx.x; // varies fastest across a warp
+    int local_x = threadIdx.x;
     int local_y = threadIdx.y;
 
     int blockRow = blockIdx.y;
     int blockCol = blockIdx.x;
 
-    // 1
-    // int row = blockRow * TILE_SIZE + threadIdx.y;
-    // int col = blockCol * TILE_SIZE + threadIdx.x;
-
-    // 2
-    // int row = blockRow * TILE_SIZE + local_y;
-    // int col = blockCol * TILE_SIZE + local_x;
-
-    // const uint row = blockIdx.y * blockDim.y + threadIdx.y;
-    // const uint col = blockIdx.x * blockDim.x + threadIdx.x;
-
-    // printf("", TILE_SIZE);
-
-    // __syncthreads();
-    // printf("cRow -> %d", cRow);
-    // __syncthreads();
-    // printf("cCol -> %d", cCol);
-    // __syncthreads();
-
-    // 3
     int row = blockRow * TILE_SIZE + local_y;
     int col = blockCol * TILE_SIZE + local_x;
 
     float sum = 0.0;
     int tiles = k / TILE_SIZE;
 
-    for(int t = 0; t < tiles; t++) {
-        // int A_off = (blockRow * TILE_SIZE) * k + t * TILE_SIZE;
-        // int B_off = (t * TILE_SIZE) * n + blockCol * TILE_SIZE;
-
-        // sA[threadIdx.y][threadIdx.x] = A[A_off + threadIdx.y * k + threadIdx.x];
-        // sB[threadIdx.y][threadIdx.x] = B[B_off + threadIdx.y * n + threadIdx.x];
-
-        // 2
-        // int a_col = t * TILE_SIZE + local_x;
-        // int a_index = row * k + a_col;
-        // sA[local_y][local_x] = A[a_index];
-
-        // int b_row = t*TILE_SIZE + local_y;
-        // int b_col = blockCol * TILE_SIZE + local_x;
-        // int b_index = b_row * n + b_col;
-        // sB[local_y][local_x] = B[b_index];
-        
+    for(int t = 0; t < tiles; t++) {        
         int a_col = t * TILE_SIZE + local_x;
         int a_index = row * k + a_col;
         sA[local_y][local_x] = A[a_index];
