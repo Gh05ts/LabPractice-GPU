@@ -29,7 +29,7 @@ int main(int argc, char *argv[])
     unsigned matArow, matAcol;
     unsigned matBrow, matBcol;
     unsigned testRound; // how many rounds to run
-    dim3 dim_grid, dim_block;
+    // dim3 dim_grid, dim_block;
 
     if (argc == 1)
     {

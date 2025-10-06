@@ -14,11 +14,24 @@
 #define TILE_SIZE 32
 #define STREAMS 4
 
-void printMatrix(float *matrix, int rows) {
-    for (int i = 0; i < rows; i++) {
+void printMatrix(float *matrix, int matrixSize) {
+    for (int i = 0; i < matrixSize; i++) {
         printf("%f ", matrix[i]);
     }
     printf("\n");
+}
+
+float* paddedMatrix(size_t matrixSize, int row, int col, int pCol) {
+  float *matrix = (float *)malloc(sizeof(float) * matrixSize);
+    memset(matrix, 0, sizeof(matrix));
+    size_t j = 0;
+    for(size_t i = 0; i < row; i++) {
+        for(size_t k = 0; k < col; k++) {
+            matrix[j + k] = (rand() % 100) / 100.00;
+        } 
+        j += pCol; 
+    }
+    return matrix;
 }
 
 int main(int argc, char *argv[])
@@ -35,11 +48,9 @@ int main(int argc, char *argv[])
 
     float *A_h, *B_h, *C_h;
     float *A_d, *B_d, *C_d;
-    size_t A_sz, B_sz, C_sz;
     unsigned matArow, matAcol;
     unsigned matBrow, matBcol;
     unsigned testRound; // how many rounds to run
-    dim3 dim_grid, dim_block;
     
     int pMatARow, pMatACol, pMatBCol;
     size_t Ap_sz, Bp_sz, Cp_sz;
@@ -79,33 +90,12 @@ int main(int argc, char *argv[])
     pMatACol = ((matAcol + TILE_SIZE - 1)/TILE_SIZE) * TILE_SIZE;
     pMatBCol = ((matBcol + TILE_SIZE - 1)/TILE_SIZE) * TILE_SIZE;
 
-    A_sz = matArow * matAcol;
-    B_sz = matBrow * matBcol;
-    C_sz = matArow * matBcol;
-
     Ap_sz = pMatARow * pMatACol;
     Bp_sz = pMatACol * pMatBCol;
     Cp_sz = pMatARow * pMatBCol;
 
-    A_h = (float *)malloc(sizeof(float) * Ap_sz);
-    memset(A_h, 0, sizeof(A_h));
-    size_t j = 0;
-    for(size_t i = 0; i < matArow; i++) {
-        for(size_t k = 0; k < matAcol; k++) {
-            A_h[j + k] = (rand() % 100) / 100.00;
-        } 
-        j += pMatACol; 
-    }
-
-    B_h = (float *)malloc(sizeof(float) * Bp_sz);
-    memset(B_h, 0, sizeof(B_h));
-    j = 0;
-    for(size_t i = 0; i < matBrow; i++) {
-        for(size_t k = 0; k < matBcol; k++) {
-            B_h[j + k] = (rand() % 100) / 100.00;
-        } 
-        j += pMatBCol;
-    }
+    A_h = paddedMatrix(Ap_sz, matArow, matAcol, pMatACol);
+    B_h = paddedMatrix(Bp_sz, matBrow, matBcol, pMatBCol);
 
     C_h = (float *)malloc(sizeof(float) * Cp_sz);
 
@@ -147,8 +137,6 @@ int main(int argc, char *argv[])
     printf("Launching kernel...");
     fflush(stdout);
     startTime(&timer);
-    // printMatrix(A_h, A_sz);
-    // printMatrix(B_h, B_sz);
     printf("\n");
     basicSgemm('N', 'N', pMatARow, pMatBCol, pMatACol, 1.0f,
                A_d, pMatARow, B_d, pMatACol, 0.0f, C_d, pMatACol, testRound);
