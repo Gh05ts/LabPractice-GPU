@@ -668,5 +668,143 @@ int main(int argc,char** argv){
 }
 
 
+Basic example
+
+// simple_thread_blocking.cu
+// Compile: nvcc -O3 simple_thread_blocking.cu -o simple_tb
+
+#include <cuda_runtime.h>
+#include <cstdio>
+
+constexpr int BM = 32;   // block tile M
+constexpr int BN = 32;   // block tile N
+constexpr int BK = 8;    // K tile
+constexpr int TX = 8;    // threads in x
+constexpr int TY = 8;    // threads in y
+constexpr int R  = 2;    // per-thread micro-tile rows
+constexpr int S  = 2;    // per-thread micro-tile cols
+
+__global__ void gemm_thread_blocking(
+    const float* __restrict__ A,
+    const float* __restrict__ B,
+    float* __restrict__ C,
+    int M, int N, int K,
+    int lda, int ldb, int ldc)
+{
+  extern __shared__ float smem[];        // allocate BM*BK + BK*BN floats
+  float* sA = smem;                      // size BM * BK
+  float* sB = smem + BM * BK;            // size BK * BN
+
+  // block origin in C
+  int block_m = blockIdx.y * BM;
+  int block_n = blockIdx.x * BN;
+
+  // thread coordinates inside the block
+  int tx = threadIdx.x; // 0..TX-1 maps to micro-col groups
+  int ty = threadIdx.y; // 0..TY-1 maps to micro-row groups
+
+  // each thread's micro-tile origin in global C
+  int row0 = block_m + ty * R;
+  int col0 = block_n + tx * S;
+
+  // accumulators stored in registers
+  float acc[R][S];
+  #pragma unroll
+  for (int i=0;i<R;i++) for (int j=0;j<S;j++) acc[i][j] = 0.0f;
+
+  // Assumptions for simplicity: BM divisible by TY, BN divisible by TX, BK divisible by TX and TY
+  const int rows_per_threadA = BM / TY;   // how many A-rows each thread loads
+  const int cols_per_threadB = BN / TX;   // how many B-cols each thread loads
+  const int elemsA_per_thread = BK / TX;  // how many A elements along K each thread loads per row
+  const int elemsB_per_thread = BK / TY;  // how many B elements along K each thread loads per col
+
+  for (int kb = 0; kb < K; kb += BK) {
+    // --- Cooperative load A_tile (BM x BK) into sA ---
+    int a_row_start = block_m + ty * rows_per_threadA;
+    #pragma unroll
+    for (int rr = 0; rr < rows_per_threadA; ++rr) {
+      int gr = a_row_start + rr;
+      int sA_row = ty * rows_per_threadA + rr;           // local shared row index
+      int sA_base = sA_row * BK;
+      int a_base = gr * lda + kb;
+      #pragma unroll
+      for (int e = 0; e < elemsA_per_thread; ++e) {
+        int koff = tx * elemsA_per_thread + e;           // which k-element this thread loads
+        float v = 0.0f;
+        int gk = kb + koff;
+        if (gr < M && gk < K) v = A[a_base + koff];
+        sA[sA_base + koff] = v;
+      }
+    }
+
+    // --- Cooperative load B_tile (BK x BN) into sB ---
+    int b_col_start = block_n + tx * cols_per_threadB;
+    #pragma unroll
+    for (int cc = 0; cc < cols_per_threadB; ++cc) {
+      int gc = b_col_start + cc;
+      int sB_col = tx * cols_per_threadB + cc;          // local shared col index
+      #pragma unroll
+      for (int e = 0; e < elemsB_per_thread; ++e) {
+        int koff = ty * elemsB_per_thread + e;          // which k-element this thread loads
+        float v = 0.0f;
+        int gk = kb + koff;
+        if (gk < K && gc < N) v = B[gk * ldb + gc];
+        sB[koff * BN + sB_col] = v;
+      }
+    }
+
+    __syncthreads();
+
+    // --- Compute on the loaded BK tile ---
+    #pragma unroll
+    for (int k_inner = 0; k_inner < BK; ++k_inner) {
+      // load the small column of A needed by this thread (R values)
+      float a_vals[R];
+      #pragma unroll
+      for (int i = 0; i < R; ++i) {
+        int srow = ty * R + i;
+        a_vals[i] = sA[srow * BK + k_inner];
+      }
+
+      // load the small row of B needed by this thread (S values)
+      float b_vals[S];
+      #pragma unroll
+      for (int j = 0; j < S; ++j) {
+        int scol = tx * S + j;
+        b_vals[j] = sB[k_inner * BN + scol];
+      }
+
+      // rank-1 update of the micro-tile
+      #pragma unroll
+      for (int i = 0; i < R; ++i)
+        #pragma unroll
+        for (int j = 0; j < S; ++j)
+          acc[i][j] += a_vals[i] * b_vals[j];
+    }
+
+    __syncthreads();
+  } // end kb loop
+
+  // --- Write back accumulators to global C with bounds checks ---
+  #pragma unroll
+  for (int i = 0; i < R; ++i) {
+    int r = row0 + i;
+    #pragma unroll
+    for (int j = 0; j < S; ++j) {
+      int c = col0 + j;
+      if (r < M && c < N) C[r * ldc + c] = acc[i][j];
+    }
+  }
+}
+
+// Host helper to launch
+void launch_example(const float* dA,const float* dB,float* dC,int M,int N,int K){
+  dim3 block(TX, TY);
+  dim3 grid((N + BN - 1)/BN, (M + BM - 1)/BM);
+  size_t shmem = (size_t)(BM * BK + BK * BN) * sizeof(float);
+  gemm_thread_blocking<<<grid, block, shmem>>>(dA,dB,dC, M,N,K, K, N, N);
+}
+
+
 
 */
