@@ -846,3 +846,176 @@ Measure shared-mem throughput and occupancy: larger thread-tiles may increase re
 
 Once you’ve squeezed out global-mem efficiency, explore warp-shuffle (__shfl_sync) tiling or tensor-core (mma.sync) intrinsics for the final performance leap.
 */
+
+/*
+
+// gemm_warp_tiled_vec4_compute.cu
+// Vectorized inner compute using float4 loads from shared memory.
+// Compile with: nvcc -arch=sm_89 gemm_warp_tiled_vec4_compute.cu -o gemm_vec4_compute
+
+#include <cuda_runtime.h>
+#include <cstdio>
+#include <algorithm>
+#include <cassert>
+
+#define CTA_M 32
+#define CTA_N 32
+#define WARP_M 16
+#define WARP_N 16
+#define MICRO_M 2   // per-lane rows inside warp-tile
+#define MICRO_N 2   // per-lane cols inside warp-tile
+static_assert(WARP_M == 16 && WARP_N == 16, "warp tile fixed");
+static_assert(MICRO_M * MICRO_N * 32 == WARP_M * WARP_N, "per-lane mapping must cover warp tile");
+
+__inline__ __device__ int flattened_tid_2d() {
+  return threadIdx.y * blockDim.x + threadIdx.x;
+}
+
+extern __shared__ float shmem[]; // layout: A_sh (CTA_M * KC) then B_sh (KC * CTA_N)
+
+__global__
+void gemm_warp_vec4_compute(const float* __restrict__ A, const float* __restrict__ B,
+                            float* __restrict__ C, int M, int N, int K,
+                            int LDA, int LDB, int LDC, int KC) {
+  const int tid = flattened_tid_2d();           // 0..127
+  const int threads_per_block = blockDim.x * blockDim.y; // 128
+  const int warp_id_in_block = tid / 32;        // 0..3
+  const int lane = tid & 31;
+
+  // CTA coordinates
+  int tile_i = blockIdx.y, tile_j = blockIdx.x;
+  int tile_row = tile_i * CTA_M, tile_col = tile_j * CTA_N;
+
+  // warp placement inside CTA (2x2 warps)
+  const int WARPS_PER_ROW = CTA_N / WARP_N; // 2
+  int warp_row = warp_id_in_block / WARPS_PER_ROW;
+  int warp_col = warp_id_in_block % WARPS_PER_ROW;
+  int warp_tile_row = tile_row + warp_row * WARP_M;
+  int warp_tile_col = tile_col + warp_col * WARP_N;
+
+  // Each lane computes two 2x2 micro-tiles (since 32 lanes cover 64 micro-tiles)
+  int micro_per_lane = 2;
+  float acc[2][MICRO_M * MICRO_N];
+  #pragma unroll
+  for (int m=0; m<micro_per_lane; ++m)
+    for (int e=0; e<MICRO_M*MICRO_N; ++e) acc[m][e] = 0.0f;
+
+  float* A_sh = shmem;                         // CTA_M * KC floats
+  float* B_sh = shmem + (size_t)CTA_M * KC;    // KC * CTA_N floats
+
+  // Compute micro-tile indices for this lane: base and base+32
+  int lane_base = lane; // 0..31
+
+  // Precompute micro-tiles per row (8 micro-tiles across 16 cols when MICRO_N=2)
+  const int MICRO_TILES_PER_ROW = WARP_N / MICRO_N; // 8
+
+  // For vectorized compute we process curKC in multiples of 4
+  for (int kc = 0; kc < K; kc += KC) {
+    int curKC = KC;                       // assumed divisor of K and multiple of 4
+    int vec4_K = curKC / 4;
+
+    // Cooperative float4 global->shared (coalesced)
+    // A_sh: CTA_M x curKC -> CTA_M * vec4_K float4 elements
+    int A_vec4_elems = CTA_M * vec4_K;
+    for (int idx = tid; idx < A_vec4_elems; idx += threads_per_block) {
+      int a_row = idx / vec4_K;
+      int a_k4  = idx % vec4_K;
+      int g_r = tile_row + a_row;
+      int g_k = kc + a_k4 * 4;
+      const float4* A4 = reinterpret_cast<const float4*>(A + (size_t)g_r * LDA + g_k);
+      float4 v = A4[0];
+      float* dst = A_sh + (size_t)a_row * curKC + a_k4 * 4;
+      dst[0]=v.x; dst[1]=v.y; dst[2]=v.z; dst[3]=v.w;
+    }
+
+    // B_sh: curKC x CTA_N -> curKC * (CTA_N/4) float4 elements
+    int B_vec4_cols = CTA_N / 4;
+    int B_vec4_elems = curKC * B_vec4_cols;
+    for (int idx = tid; idx < B_vec4_elems; idx += threads_per_block) {
+      int b_k = idx / B_vec4_cols;
+      int b_c4 = idx % B_vec4_cols;
+      int g_k = kc + b_k;
+      int g_c = tile_col + b_c4 * 4;
+      const float4* B4 = reinterpret_cast<const float4*>(B + (size_t)g_k * LDB + g_c);
+      float4 v = B4[0];
+      float* dst = B_sh + (size_t)b_k * CTA_N + b_c4 * 4;
+      dst[0]=v.x; dst[1]=v.y; dst[2]=v.z; dst[3]=v.w;
+    }
+
+    __syncthreads();
+
+    // Vectorized inner loop: process 4 K-values per iteration using float4 loads from shared memory
+    // For each micro-tile assigned to this lane:
+    for (int m = 0; m < micro_per_lane; ++m) {
+      int micro_id = lane_base + m * 32;               // 0..63
+      int mt_row = micro_id / MICRO_TILES_PER_ROW;     // 0..7
+      int mt_col = micro_id % MICRO_TILES_PER_ROW;     // 0..7
+      int local_row = mt_row * MICRO_M;                // 0..14 step 2
+      int local_col = mt_col * MICRO_N;                // 0..14 step 2
+
+      // pointers inside shared memory for A rows for this micro-tile:
+      int a_sh_row0 = (warp_tile_row - tile_row) + local_row;
+      int a_sh_row1 = a_sh_row0 + 1;
+      int b_sh_col0 = (warp_tile_col - tile_col) + local_col;
+
+      // iterate vec4_K times; each iteration loads float4 from A_sh rows and B_sh rows
+      for (int v = 0; v < vec4_K; ++v) {
+        // load 4 consecutive A elements for row0 and row1 as float4
+        float4 a4_row0 = *reinterpret_cast<float4*>(A_sh + (size_t)a_sh_row0 * curKC + v*4);
+        float4 a4_row1 = *reinterpret_cast<float4*>(A_sh + (size_t)a_sh_row1 * curKC + v*4);
+
+        // load 4 consecutive B elements across columns at the same K positions for the warp-tile columns
+        // We need 2 columns for this micro-tile; fetch B blocks that contain them.
+        // For best reuse we load B_sh row v*4..v*4+3 and then pick relevant columns.
+        float4 b4_0 = *reinterpret_cast<float4*>(B_sh + (size_t)(v*4) * CTA_N + (b_sh_col0 + 0));
+        // b4_0 contains B[t+0..t+3, col0..], but since B_sh layout is row-major at per-k level,
+        // we actually need to access element-wise. For simplicity and full vectorization,
+        // we'll view B_sh + t*CTA_N as pointer to float and load 4 floats starting at col0.
+        // Here b4_0 is loaded as the 4 consecutive columns for that k index,
+        // and the next v iteration covers next k index.
+
+        // Unpack a4_row0 and a4_row1 into scalar lanes and multiply-accumulate with appropriate b elements:
+        // a4_row0.x * b_col0_at_t0 etc. We multiply across 4 k positions.
+        acc[m][0] += a4_row0.x * (B_sh[(v*4 + 0) * CTA_N + (b_sh_col0 + 0)]);
+        acc[m][1] += a4_row0.x * (B_sh[(v*4 + 0) * CTA_N + (b_sh_col0 + 1)]);
+        acc[m][2] += a4_row1.x * (B_sh[(v*4 + 0) * CTA_N + (b_sh_col0 + 0)]);
+        acc[m][3] += a4_row1.x * (B_sh[(v*4 + 0) * CTA_N + (b_sh_col0 + 1)]);
+
+        acc[m][0] += a4_row0.y * (B_sh[(v*4 + 1) * CTA_N + (b_sh_col0 + 0)]);
+        acc[m][1] += a4_row0.y * (B_sh[(v*4 + 1) * CTA_N + (b_sh_col0 + 1)]);
+        acc[m][2] += a4_row1.y * (B_sh[(v*4 + 1) * CTA_N + (b_sh_col0 + 0)]);
+        acc[m][3] += a4_row1.y * (B_sh[(v*4 + 1) * CTA_N + (b_sh_col0 + 1)]);
+
+        acc[m][0] += a4_row0.z * (B_sh[(v*4 + 2) * CTA_N + (b_sh_col0 + 0)]);
+        acc[m][1] += a4_row0.z * (B_sh[(v*4 + 2) * CTA_N + (b_sh_col0 + 1)]);
+        acc[m][2] += a4_row1.z * (B_sh[(v*4 + 2) * CTA_N + (b_sh_col0 + 0)]);
+        acc[m][3] += a4_row1.z * (B_sh[(v*4 + 2) * CTA_N + (b_sh_col0 + 1)]);
+
+        acc[m][0] += a4_row0.w * (B_sh[(v*4 + 3) * CTA_N + (b_sh_col0 + 0)]);
+        acc[m][1] += a4_row0.w * (B_sh[(v*4 + 3) * CTA_N + (b_sh_col0 + 1)]);
+        acc[m][2] += a4_row1.w * (B_sh[(v*4 + 3) * CTA_N + (b_sh_col0 + 0)]);
+        acc[m][3] += a4_row1.w * (B_sh[(v*4 + 3) * CTA_N + (b_sh_col0 + 1)]);
+      } // vec4_K
+    } // micro_per_lane
+
+    __syncthreads();
+  } // KC loop
+
+  // write back accumulators for each micro-tile this lane owns
+  for (int m = 0; m < micro_per_lane; ++m) {
+    int micro_id = lane_base + m * 32;
+    int mt_row = micro_id / MICRO_TILES_PER_ROW;
+    int mt_col = micro_id % MICRO_TILES_PER_ROW;
+    int local_row = mt_row * MICRO_M;
+    int local_col = mt_col * MICRO_N;
+    int out_r0 = warp_tile_row + local_row;
+    int out_c0 = warp_tile_col + local_col;
+    // write 2x2 block
+    C[(size_t)out_r0 * LDC + out_c0 + 0] = acc[m][0];
+    C[(size_t)out_r0 * LDC + out_c0 + 1] = acc[m][1];
+    C[(size_t)(out_r0 + 1) * LDC + out_c0 + 0] = acc[m][2];
+    C[(size_t)(out_r0 + 1) * LDC + out_c0 + 1] = acc[m][3];
+  }
+}
+
+*/
