@@ -838,3 +838,11 @@ void launch_example(const float* dA,const float* dB,float* dC,int M,int N,int K)
 
 
 */
+
+/*
+Experiment with THREAD_TILE=8 on newer architectures—just remember to bump your padded dims and block splits by 8.
+
+Measure shared-mem throughput and occupancy: larger thread-tiles may increase register pressure.
+
+Once you’ve squeezed out global-mem efficiency, explore warp-shuffle (__shfl_sync) tiling or tensor-core (mma.sync) intrinsics for the final performance leap.
+*/
