@@ -18,28 +18,28 @@ using Vec4 = float4;
 __global__ 
 void mysgemm(int m, int n, int k, const float *A, const float *B, float *C) {
 
-    /********************************************************************
-     *
-     * Compute C = A x B
-     *   where A is a (m x k) matrix
-     *   where B is a (k x n) matrix
-     *   where C is a (m x n) matrix
-     *
-     * Use shared memory for tiling
-     *
-     ********************************************************************/
+  /********************************************************************
+   *
+   * Compute C = A x B
+   *   where A is a (m x k) matrix
+   *   where B is a (k x n) matrix
+   *   where C is a (m x n) matrix
+   *
+   * Use shared memory for tiling
+   *
+   ********************************************************************/
 
-    // INSERT KERNEL CODE HERE    
-    int blockRowStart = blockIdx.y * TILE_SIZE;
-    int blockColStart = blockIdx.x * TILE_SIZE;
+  // INSERT KERNEL CODE HERE    
+  int blockRowStart = blockIdx.y * TILE_SIZE;
+  int blockColStart = blockIdx.x * TILE_SIZE;
 
-    int threadRowOff = threadIdx.y * THREAD_TILE;
-    int threadColOff = threadIdx.x * THREAD_TILE;
+  int threadRowOff = threadIdx.y * THREAD_TILE;
+  int threadColOff = threadIdx.x * THREAD_TILE;
 
-    __shared__ float sA[TILE_SIZE][TILE_SIZE];
-    __shared__ float sB[TILE_SIZE][TILE_SIZE];
+  __shared__ float sA[TILE_SIZE][TILE_SIZE];
+  __shared__ float sB[TILE_SIZE][TILE_SIZE];
 
-    float Creg[THREAD_TILE][THREAD_TILE] = {{0}};
+  float Creg[THREAD_TILE][THREAD_TILE] = {{0}};
 
   for (int kTileStart = 0; kTileStart < k; kTileStart += TILE_SIZE) {
     #pragma unroll

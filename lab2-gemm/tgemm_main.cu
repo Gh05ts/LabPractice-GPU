@@ -23,7 +23,8 @@ void printMatrix(float *matrix, int matrixSize) {
 }
 
 float* paddedMatrix(size_t matrixSize, int row, int col, int pCol) {
-  float *matrix = (float *)malloc(sizeof(float) * matrixSize);
+    float *matrix;
+    cudaHostAlloc(&matrix, matrixSize * sizeof(float), cudaHostAllocDefault);
     memset(matrix, 0, sizeof(matrix));
     size_t j = 0;
     for(size_t i = 0; i < row; i++) {
@@ -98,7 +99,7 @@ int main(int argc, char *argv[])
     A_h = paddedMatrix(Ap_sz, matArow, matAcol, pMatACol);
     B_h = paddedMatrix(Bp_sz, matBrow, matBcol, pMatBCol);
 
-    C_h = (float *)malloc(sizeof(float) * Cp_sz);
+    cudaHostAlloc(&C_h, Cp_sz * sizeof(float), cudaHostAllocDefault);
 
     stopTime(&timer);
     printf("%f s\n", elapsedTime(timer));
@@ -114,7 +115,12 @@ int main(int argc, char *argv[])
     // INSERT CODE HERE
     cudaMalloc((void **) &A_d, Ap_sz * sizeof(float));
     cudaMalloc((void **) &B_d, Bp_sz * sizeof(float));
-    cudaMalloc((void **) &C_d, Cp_sz * sizeof(float));    
+    cudaMalloc((void **) &C_d, Cp_sz * sizeof(float));
+
+    cudaStream_t s[STREAMS];
+    for(int i = 0; i < STREAMS; ++i) {
+        cudaStreamCreate(&s[i]);
+    }
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -170,9 +176,9 @@ int main(int argc, char *argv[])
 
     // Free memory ------------------------------------------------------------
 
-    free(A_h);
-    free(B_h);
-    free(C_h);
+    cudaFreeHost(A_h);
+    cudaFreeHost(B_h);
+    cudaFreeHost(C_h);
 
     // INSERT CODE HERE
     cudaFree(A_d);
