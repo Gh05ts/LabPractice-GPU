@@ -11,7 +11,8 @@
 #include "tgemm_kernel.cu"
 #include "support.h"
 
-#define TILE_SIZE 32
+#define TILE_SIZE 8
+#define THREAD_TILE 4
 #define STREAMS 4
 
 void printMatrix(float *matrix, int matrixSize) {
@@ -86,9 +87,9 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    pMatARow = ((matArow + TILE_SIZE - 1)/TILE_SIZE) * TILE_SIZE;
-    pMatACol = ((matAcol + TILE_SIZE - 1)/TILE_SIZE) * TILE_SIZE;
-    pMatBCol = ((matBcol + TILE_SIZE - 1)/TILE_SIZE) * TILE_SIZE;
+    pMatARow = ((matArow + (TILE_SIZE * THREAD_TILE) - 1)/ (TILE_SIZE * THREAD_TILE)) * (TILE_SIZE * THREAD_TILE);
+    pMatACol = ((matAcol + (TILE_SIZE * THREAD_TILE) - 1)/ (TILE_SIZE * THREAD_TILE)) * (TILE_SIZE * THREAD_TILE);
+    pMatBCol = ((matBcol + (TILE_SIZE * THREAD_TILE) - 1)/ (TILE_SIZE * THREAD_TILE)) * (TILE_SIZE * THREAD_TILE);
 
     Ap_sz = pMatARow * pMatACol;
     Bp_sz = pMatACol * pMatBCol;

@@ -9,11 +9,12 @@
 #include <stdio.h>
 
 // Feel free to use other numbers for best performance
-#define TILE_SIZE 32
+#define TILE_SIZE 8
+#define THREAD_TILE 4
 #define BLOCK_SIZE 32
 
-__global__ void mysgemm(int m, int n, int k, const float *A, const float *B, float *C)
-{
+__global__ 
+void mysgemm(int m, int n, int k, const float *A, const float *B, float *C) {
 
     /********************************************************************
      *
@@ -26,83 +27,102 @@ __global__ void mysgemm(int m, int n, int k, const float *A, const float *B, flo
      *
      ********************************************************************/
 
-    // INSERT KERNEL CODE HERE
-    
+    // INSERT KERNEL CODE HERE    
+    int blockRowStart = blockIdx.y * TILE_SIZE;
+    int blockColStart = blockIdx.x * TILE_SIZE;
+
+    int threadRowOff = threadIdx.y * THREAD_TILE;
+    int threadColOff = threadIdx.x * THREAD_TILE;
+
     __shared__ float sA[TILE_SIZE][TILE_SIZE];
     __shared__ float sB[TILE_SIZE][TILE_SIZE];
 
-    int local_x = threadIdx.x;
-    int local_y = threadIdx.y;
+    float Creg[THREAD_TILE][THREAD_TILE] = {{0}};
 
-    int blockRow = blockIdx.y;
-    int blockCol = blockIdx.x;
+  for (int kTileStart = 0; kTileStart < k; kTileStart += TILE_SIZE) {
+    for (int i = 0; i < THREAD_TILE; ++i) {
+      for (int j = 0; j < THREAD_TILE; ++j) {
+        int sCol = threadColOff + j;
+        int sRow = threadRowOff + i;
 
-    int row = blockRow * TILE_SIZE + local_y;
-    int col = blockCol * TILE_SIZE + local_x;
+        int aRow = blockRowStart + sRow;
+        int aCol = kTileStart   + sCol;
+        sA[sRow][sCol] = A[aRow * k + aCol];
 
-    float sum = 0.0;
-    int tiles = k / TILE_SIZE;
-
-    for(int t = 0; t < tiles; t++) {        
-        int a_col = t * TILE_SIZE + local_x;
-        int a_index = row * k + a_col;
-        sA[local_y][local_x] = A[a_index];
-
-        int b_row = t * TILE_SIZE + local_y;
-        int b_col = blockCol * TILE_SIZE + local_x;
-        int b_index = b_row * n + b_col;
-        sB[local_y][local_x] = B[b_index];
-        __syncthreads();
-
-        // currently multiplying all a in tile with all b in tile
-        // trying to do: get the values of b out and store them, and reuse values to calculate the axb and avoid repeated b reads
-        #pragma unroll
-        for(int i = 0; i < TILE_SIZE; i++) {
-            sum += sA[local_y][i] * sB[i][local_x];
-        }
-
-        __syncthreads();
+        int bRow = kTileStart   + sRow;
+        int bCol = blockColStart+ sCol;
+        sB[sRow][sCol] = B[bRow * n + bCol];
+      }
     }
-    C[row*n+col] = sum;
+    __syncthreads();
+
+    for (int kk = 0; kk < TILE_SIZE; ++kk) {
+      float aVals[THREAD_TILE];
+      float bVals[THREAD_TILE];
+
+      for (int i = 0; i < THREAD_TILE; ++i) {
+        aVals[i] = sA[threadRowOff + i][kk];
+      }
+
+      for (int j = 0; j < THREAD_TILE; ++j) {
+        bVals[j] = sB[kk][threadColOff + j];
+      }
+
+      for (int i = 0; i < THREAD_TILE; ++i) {
+        for (int j = 0; j < THREAD_TILE; ++j) {
+          Creg[i][j] += aVals[i] * bVals[j];
+        }
+      }
+    }
+    __syncthreads();
+  }
+
+  for (int i = 0; i < THREAD_TILE; ++i) {
+    for (int j = 0; j < THREAD_TILE; ++j) {
+      int r = blockRowStart + threadRowOff + i;
+      int c = blockColStart + threadColOff + j;
+      C[r * n + c] = Creg[i][j];
+    }
+  }
 }
 
 void basicSgemm(char transa, char transb, int m, int n, int k, float alpha, const float *A, int lda, const float *B, int ldb, float beta, float *C, int ldc, int testRound)
 {
-    if ((transa != 'N') && (transa != 'n'))
-    {
-        printf("unsupported value of 'transa'\n");
-        return;
-    }
+  if ((transa != 'N') && (transa != 'n'))
+  {
+    printf("unsupported value of 'transa'\n");
+    return;
+  }
 
-    if ((transb != 'N') && (transb != 'n'))
-    {
-        printf("unsupported value of 'transb'\n");
-        return;
-    }
+  if ((transb != 'N') && (transb != 'n'))
+  {
+    printf("unsupported value of 'transb'\n");
+    return;
+  }
 
-    if ((alpha - 1.0f > 1e-10) || (alpha - 1.0f < -1e-10))
-    {
-        printf("unsupported value of alpha\n");
-        return;
-    }
+  if ((alpha - 1.0f > 1e-10) || (alpha - 1.0f < -1e-10))
+  {
+    printf("unsupported value of alpha\n");
+    return;
+  }
 
-    if ((beta - 0.0f > 1e-10) || (beta - 0.0f < -1e-10))
-    {
-        printf("unsupported value of beta\n");
-        return;
-    }
+  if ((beta - 0.0f > 1e-10) || (beta - 0.0f < -1e-10))
+  {
+    printf("unsupported value of beta\n");
+    return;
+  }
 
-    // Initialize thread block and kernel grid dimensions ----------------------
+  // Initialize thread block and kernel grid dimensions ----------------------
+  // INSERT CODE HERE
+  dim3 dimBlock(TILE_SIZE / THREAD_TILE, TILE_SIZE / THREAD_TILE);
+  dim3 dimGrid((n + TILE_SIZE - 1) / TILE_SIZE, (m + TILE_SIZE - 1)/ TILE_SIZE);    
+
+  for (int i = 0; i < testRound; i++) {
+    // Invoke CUDA kernel --------------------------------------------------
     // INSERT CODE HERE
-    dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-    dim3 dimGrid((n + dimBlock.x - 1) / dimBlock.x, (m + dimBlock.y - 1)/ dimBlock.y);    
-
-    for (int i = 0; i < testRound; i++) {
-        // Invoke CUDA kernel --------------------------------------------------
-        // INSERT CODE HERE
-        mysgemm<<<dimGrid, dimBlock>>>(m, n, k, A, B, C);
-        cudaDeviceSynchronize();
-    }
+    mysgemm<<<dimGrid, dimBlock>>>(m, n, k, A, B, C);
+    cudaDeviceSynchronize();
+  }
 }
 
 
