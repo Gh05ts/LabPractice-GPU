@@ -11,7 +11,7 @@
 #include "tgemm_kernel.cu"
 #include "support.h"
 
-#define TILE_SIZE 8
+#define TILE_SIZE 32
 #define THREAD_TILE 4
 #define STREAMS 4
 

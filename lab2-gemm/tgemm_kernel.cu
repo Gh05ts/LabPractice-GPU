@@ -9,9 +9,11 @@
 #include <stdio.h>
 
 // Feel free to use other numbers for best performance
-#define TILE_SIZE 8
+#define TILE_SIZE 32
 #define THREAD_TILE 4
 #define BLOCK_SIZE 32
+
+using Vec4 = float4;
 
 __global__ 
 void mysgemm(int m, int n, int k, const float *A, const float *B, float *C) {
@@ -40,18 +42,22 @@ void mysgemm(int m, int n, int k, const float *A, const float *B, float *C) {
     float Creg[THREAD_TILE][THREAD_TILE] = {{0}};
 
   for (int kTileStart = 0; kTileStart < k; kTileStart += TILE_SIZE) {
-    for (int i = 0; i < THREAD_TILE; ++i) {
-      for (int j = 0; j < THREAD_TILE; ++j) {
-        int sCol = threadColOff + j;
-        int sRow = threadRowOff + i;
+    #pragma unroll
+    for(int i = 0; i < THREAD_TILE; ++i) {
+      int sRow = threadRowOff + i;
+
+      for(int v = 0; v < THREAD_TILE; v += 4) {
+        int sCol = threadColOff + v;
 
         int aRow = blockRowStart + sRow;
-        int aCol = kTileStart   + sCol;
-        sA[sRow][sCol] = A[aRow * k + aCol];
+        int aCol = kTileStart + sCol;
+        Vec4 aVec = reinterpret_cast<const Vec4*>(A + aRow * k + aCol)[0];
+        *reinterpret_cast<Vec4*>(&sA[sRow][sCol]) = aVec;
 
-        int bRow = kTileStart   + sRow;
-        int bCol = blockColStart+ sCol;
-        sB[sRow][sCol] = B[bRow * n + bCol];
+        int bRow = kTileStart + sRow;
+        int bCol = blockColStart + sCol;
+        Vec4 bVec = reinterpret_cast<const Vec4*>(B + bRow * n + bCol)[0];
+        *reinterpret_cast<Vec4*>(&sB[sRow][sCol]) = bVec;
       }
     }
     __syncthreads();
@@ -78,12 +84,16 @@ void mysgemm(int m, int n, int k, const float *A, const float *B, float *C) {
   }
 
   for (int i = 0; i < THREAD_TILE; ++i) {
-    for (int j = 0; j < THREAD_TILE; ++j) {
-      int r = blockRowStart + threadRowOff + i;
-      int c = blockColStart + threadColOff + j;
-      C[r * n + c] = Creg[i][j];
+    int r = blockRowStart + threadRowOff + i;
+
+    float* Crow  = C + r * n + blockColStart;
+    float4* Crow4 = reinterpret_cast<float4*>(Crow);
+
+    for (int v4 = 0; v4 < THREAD_TILE/4; ++v4) {
+      int idx4 = threadIdx.x * (THREAD_TILE/4) + v4;
+      Crow4[idx4] = make_float4(Creg[i][v4*4 + 0], Creg[i][v4*4 + 1], Creg[i][v4*4 + 2], Creg[i][v4*4 + 3]);
     }
-  }
+  }  
 }
 
 void basicSgemm(char transa, char transb, int m, int n, int k, float alpha, const float *A, int lda, const float *B, int ldb, float beta, float *C, int ldc, int testRound)
