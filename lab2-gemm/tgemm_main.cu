@@ -15,13 +15,6 @@
 #define THREAD_TILE 4
 #define STREAMS 4
 
-void printMatrix(float *matrix, int matrixSize) {
-    for (int i = 0; i < matrixSize; i++) {
-        printf("%f ", matrix[i]);
-    }
-    printf("\n");
-}
-
 float* paddedMatrix(size_t matrixSize, int row, int col, int pCol) {
     float *matrix;
     cudaHostAlloc(&matrix, matrixSize * sizeof(float), cudaHostAllocDefault);
@@ -88,6 +81,11 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
+    // int pMatARow = round_up(matArow, BM);
+    // int pMatBCol = round_up(matBcol, BN);
+    // int pMatACol = round_up(matAcol, BK);
+    // pMatACol = round_up(pMatACol, 4);
+
     pMatARow = ((matArow + (TILE_SIZE * THREAD_TILE) - 1)/ (TILE_SIZE * THREAD_TILE)) * (TILE_SIZE * THREAD_TILE);
     pMatACol = ((matAcol + (TILE_SIZE * THREAD_TILE) - 1)/ (TILE_SIZE * THREAD_TILE)) * (TILE_SIZE * THREAD_TILE);
     pMatBCol = ((matBcol + (TILE_SIZE * THREAD_TILE) - 1)/ (TILE_SIZE * THREAD_TILE)) * (TILE_SIZE * THREAD_TILE);
@@ -117,10 +115,10 @@ int main(int argc, char *argv[])
     cudaMalloc((void **) &B_d, Bp_sz * sizeof(float));
     cudaMalloc((void **) &C_d, Cp_sz * sizeof(float));
 
-    cudaStream_t s[STREAMS];
-    for(int i = 0; i < STREAMS; ++i) {
-        cudaStreamCreate(&s[i]);
-    }
+    // cudaStream_t s[STREAMS];
+    // for(int i = 0; i < STREAMS; ++i) {
+    //     cudaStreamCreate(&s[i]);
+    // }
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -147,10 +145,10 @@ int main(int argc, char *argv[])
     printf("\n");
     basicSgemm('N', 'N', pMatARow, pMatBCol, pMatACol, 1.0f,
                A_d, pMatARow, B_d, pMatACol, 0.0f, C_d, pMatACol, testRound);
-
     cuda_ret = cudaDeviceSynchronize();
     if (cuda_ret != cudaSuccess)
-        FATAL("Unable to launch kernel");
+        printf(cudaGetErrorString(cuda_ret));
+        // FATAL("Unable to launch kernel");
     stopTime(&timer);
     printf("%f s for %d rounds, i.e., %f/round\n", elapsedTime(timer), testRound, elapsedTime(timer) / testRound);
 
@@ -187,115 +185,3 @@ int main(int argc, char *argv[])
 
     return 0;
 }
-
-
-/*
-#include <cuda_runtime.h>
-#include <cstdio>
-#include <algorithm>
-
-int main() {
-    int M = 8192;            // rows of A and C
-    int K = 8192;            // cols of A, rows of B
-    int N = 8192;            // cols of B and C
-
-    size_t bytesA = (size_t)M * K * sizeof(float);
-    size_t bytesB = (size_t)K * N * sizeof(float);
-    size_t bytesC = (size_t)M * N * sizeof(float);
-
-    // Tile along M (rows of A/C)
-    int tileM = 1024; // tune this
-    int numTiles = (M + tileM - 1) / tileM;
-
-    // Allocate pinned host memory
-    float *A_h = nullptr, *B_h = nullptr, *C_h = nullptr;
-    cudaMallocHost(&A_h, bytesA);
-    cudaMallocHost(&B_h, bytesB);
-    cudaMallocHost(&C_h, bytesC);
-
-    // Initialize A_h and B_h as needed for tests
-    // for (size_t i=0;i<... ) A_h[i] = ...; B_h[...] = ...;
-
-    // Allocate device memory
-    float *A_d_tile = nullptr, *B_d = nullptr, *C_d = nullptr;
-    size_t tileBytesA = (size_t)tileM * K * sizeof(float); // max tile allocation
-    cudaMalloc(&A_d_tile, tileBytesA);
-    cudaMalloc(&B_d, bytesB);
-    cudaMalloc(&C_d, bytesC);
-
-    // Copy full B once
-    cudaMemcpy(B_d, B_h, bytesB, cudaMemcpyHostToDevice);
-
-    // Streams and events
-    const int numStreams = 2;
-    cudaStream_t streams[numStreams];
-    for (int i = 0; i < numStreams; ++i) cudaStreamCreate(&streams[i]);
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    // Block and grid sizes
-    dim3 block(16, 16); // tune block size
-    // grid.x depends on N, grid.y depends on tileM_actual per-tile
-
-    int warmups = 1;
-    int rounds = 10;
-    for (int r = -warmups; r < rounds; ++r) {
-        bool isWarmup = (r < 0);
-        if (!isWarmup) cudaEventRecord(start, 0);
-
-        for (int t = 0; t < numTiles; ++t) {
-            int tileRowOffset = t * tileM;
-            int tileM_actual = std::min(tileM, M - tileRowOffset);
-            size_t thisABytes = (size_t)tileM_actual * K * sizeof(float);
-            size_t thisCBytes = (size_t)tileM_actual * N * sizeof(float);
-
-            int sidx = t % numStreams;
-
-            // Async copy A tile (host -> device) into A_d_tile on stream sidx
-            cudaMemcpyAsync(A_d_tile,
-                            A_h + (size_t)tileRowOffset * K,
-                            thisABytes,
-                            cudaMemcpyHostToDevice,
-                            streams[sidx]);
-
-            // Launch kernel on same stream to preserve ordering
-            dim3 grid((N + block.x - 1) / block.x,
-                      (tileM_actual + block.y - 1) / block.y);
-            matmul_naive_tile<<<grid, block, 0, streams[sidx]>>>(
-                A_d_tile, B_d, C_d, M, K, N, tileRowOffset, tileM_actual);
-
-            // Async copy result tile back (device -> host)
-            cudaMemcpyAsync(C_h + (size_t)tileRowOffset * N,
-                            C_d + (size_t)tileRowOffset * N,
-                            thisCBytes,
-                            cudaMemcpyDeviceToHost,
-                            streams[sidx]);
-        }
-
-        // synchronize streams for the round
-        for (int i = 0; i < numStreams; ++i) cudaStreamSynchronize(streams[i]);
-
-        if (!isWarmup) {
-            cudaEventRecord(stop, 0);
-            cudaEventSynchronize(stop);
-            float ms = 0.0f;
-            cudaEventElapsedTime(&ms, start, stop);
-            printf("Round %d elapsed: %f ms\n", r, ms);
-        }
-    }
-
-    // Cleanup
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-    for (int i=0;i<numStreams;++i) cudaStreamDestroy(streams[i]);
-    cudaFree(A_d_tile);
-    cudaFree(B_d);
-    cudaFree(C_d);
-    cudaFreeHost(A_h);
-    cudaFreeHost(B_h);
-    cudaFreeHost(C_h);
-    return 0;
-}
-
-*/

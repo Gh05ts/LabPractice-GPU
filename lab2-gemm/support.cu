@@ -32,7 +32,10 @@ void verify(float *A, float *B, float *C, unsigned int m, unsigned int k,
             {
                 printf("TEST FAILED\n\n");
                 exit(0);
-            }
+            } 
+            // else {
+            //     printf("Passed");
+            // }
         }
     }
     printf("TEST PASSED\n\n");
