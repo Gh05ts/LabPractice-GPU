@@ -11,10 +11,6 @@
 #include "tgemm_kernel.cu"
 #include "support.h"
 
-#define TILE_SIZE 32
-#define THREAD_TILE 4
-#define STREAMS 4
-
 float* paddedMatrix(size_t matrixSize, int row, int col, int pCol) {
     float *matrix;
     cudaHostAlloc(&matrix, matrixSize * sizeof(float), cudaHostAllocDefault);
@@ -29,9 +25,11 @@ float* paddedMatrix(size_t matrixSize, int row, int col, int pCol) {
     return matrix;
 }
 
-int main(int argc, char *argv[])
+int main(int argc,  char *argv[])
 {
-
+    const uint tile_size = 32;
+    const uint thread_tile = 4;
+    
     Timer timer;
     cudaError_t cuda_ret;
 
@@ -81,14 +79,9 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    // int pMatARow = round_up(matArow, BM);
-    // int pMatBCol = round_up(matBcol, BN);
-    // int pMatACol = round_up(matAcol, BK);
-    // pMatACol = round_up(pMatACol, 4);
-
-    pMatARow = ((matArow + (TILE_SIZE * THREAD_TILE) - 1)/ (TILE_SIZE * THREAD_TILE)) * (TILE_SIZE * THREAD_TILE);
-    pMatACol = ((matAcol + (TILE_SIZE * THREAD_TILE) - 1)/ (TILE_SIZE * THREAD_TILE)) * (TILE_SIZE * THREAD_TILE);
-    pMatBCol = ((matBcol + (TILE_SIZE * THREAD_TILE) - 1)/ (TILE_SIZE * THREAD_TILE)) * (TILE_SIZE * THREAD_TILE);
+    pMatARow = ((matArow + (tile_size * thread_tile) - 1)/ (tile_size * thread_tile)) * (tile_size * thread_tile);
+    pMatACol = ((matAcol + (tile_size * thread_tile) - 1)/ (tile_size * thread_tile)) * (tile_size * thread_tile);
+    pMatBCol = ((matBcol + (tile_size * thread_tile) - 1)/ (tile_size * thread_tile)) * (tile_size * thread_tile);
 
     Ap_sz = pMatARow * pMatACol;
     Bp_sz = pMatACol * pMatBCol;
@@ -115,11 +108,6 @@ int main(int argc, char *argv[])
     cudaMalloc((void **) &B_d, Bp_sz * sizeof(float));
     cudaMalloc((void **) &C_d, Cp_sz * sizeof(float));
 
-    // cudaStream_t s[STREAMS];
-    // for(int i = 0; i < STREAMS; ++i) {
-    //     cudaStreamCreate(&s[i]);
-    // }
-
     cudaDeviceSynchronize();
     stopTime(&timer);
     printf("%f s\n", elapsedTime(timer));
@@ -143,12 +131,11 @@ int main(int argc, char *argv[])
     fflush(stdout);
     startTime(&timer);
     printf("\n");
-    basicSgemm('N', 'N', pMatARow, pMatBCol, pMatACol, 1.0f,
-               A_d, pMatARow, B_d, pMatACol, 0.0f, C_d, pMatACol, testRound);
+    basicSgemm<tile_size, thread_tile>('N', 'N', pMatARow, pMatBCol, pMatACol, 1.0f, A_d, pMatARow, B_d, pMatACol, 0.0f, C_d, pMatACol, testRound);
     cuda_ret = cudaDeviceSynchronize();
     if (cuda_ret != cudaSuccess)
-        printf(cudaGetErrorString(cuda_ret));
-        // FATAL("Unable to launch kernel");
+        // printf(cudaGetErrorString(cuda_ret));
+        FATAL("Unable to launch kernel");
     stopTime(&timer);
     printf("%f s for %d rounds, i.e., %f/round\n", elapsedTime(timer), testRound, elapsedTime(timer) / testRound);
 

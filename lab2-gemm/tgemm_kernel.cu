@@ -8,15 +8,11 @@
 
 #include <stdio.h>
 
-// Feel free to use other numbers for best performance
-#define TILE_SIZE 32
-#define THREAD_TILE 4
-#define BLOCK_SIZE 128
-#define WARP_SIZE 8
 using Vec4 = float4;
 
+template<const uint TILE_SIZE, const uint THREAD_TILE>
 __global__ 
-void mysgemm(int m, int n, int k, const float *A, const float *B, float *C) {
+void mysgemm(const int m, const int n, const int k, const float* __restrict__ A, const float* __restrict__ B, float* __restrict__ C) {
 
   /********************************************************************
    *
@@ -96,6 +92,7 @@ void mysgemm(int m, int n, int k, const float *A, const float *B, float *C) {
   }  
 }
 
+template<const uint TILE_SIZE, const uint THREAD_TILE>
 void basicSgemm(char transa, char transb, int m, int n, int k, float alpha, const float *A, int lda, const float *B, int ldb, float beta, float *C, int ldc, int testRound)
 {
   if ((transa != 'N') && (transa != 'n'))
@@ -130,7 +127,7 @@ void basicSgemm(char transa, char transb, int m, int n, int k, float alpha, cons
   for (int i = 0; i < testRound; i++) {
     // Invoke CUDA kernel --------------------------------------------------
     // INSERT CODE HERE
-    mysgemm<<<dimGrid, dimBlock>>>(m, n, k, A, B, C);
+    mysgemm<TILE_SIZE, THREAD_TILE><<<dimGrid, dimBlock>>>(m, n, k, A, B, C);
     cudaDeviceSynchronize();
   }
 }
