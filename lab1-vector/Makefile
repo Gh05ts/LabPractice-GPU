@@ -1,6 +1,6 @@
 
 NVCC        = nvcc
-NVCC_FLAGS  = -O0 -I/usr/local/cuda/include
+NVCC_FLAGS  = -O0 -I/usr/local/cuda/include --use_fast_math
 LD_FLAGS    = -lcudart -L/usr/local/cuda/lib64
 
 default: vecadd image2gray
