@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include "support.h"
 #include "conv_kernel.cu"
+#include "nppi.h"
 
 int main(int argc, char *argv[])
 {
@@ -21,11 +22,14 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     Matrix M_h, N_h, P_h; // M: filter, N: input image, P: output image
-    Matrix N_d, P_d;
+    Matrix P_d; // N_d, 
+    Texture N_d;
     unsigned imageHeight, imageWidth;
     unsigned testRound; // how many rounds to run
     cudaError_t cuda_ret;
     dim3 dim_grid, dim_block;
+
+    // nppiFilter_8u_C1R()
 
     /* Read image dimensions */
     if (argc == 1)
@@ -76,7 +80,7 @@ int main(int argc, char *argv[])
     fflush(stdout);
     startTime(&timer);
 
-    N_d = allocateDeviceMatrix(imageHeight, imageWidth);
+    // allocateDeviceMatrix(imageHeight, imageWidth);
     P_d = allocateDeviceMatrix(imageHeight, imageWidth);
 
     cudaDeviceSynchronize();
@@ -90,11 +94,12 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     /* Copy image to device global memory */
-    copyToDeviceMatrix(N_d, N_h);
+    // copyToDeviceMatrix(N_d, N_h);
+    N_d = allocateTex(N_h, imageHeight, imageWidth);
 
     /* Copy mask to device constant memory */
     // INSERT CODE HERE
-    
+    cudaMemcpyToSymbol(M_c, M_h.elements, sizeof(M_h), 0, cudaMemcpyHostToDevice);    
 
 
     if (cuda_ret != cudaSuccess)
@@ -154,7 +159,8 @@ int main(int argc, char *argv[])
     freeMatrix(M_h);
     freeMatrix(N_h);
     freeMatrix(P_h);
-    freeDeviceMatrix(N_d);
+    cudaDestroyTextureObject(N_d.tex);
+    cudaFreeArray(N_d.cu);
     freeDeviceMatrix(P_d);
 
     return 0;
