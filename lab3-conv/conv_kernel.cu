@@ -25,9 +25,16 @@ __global__ void convolution(cudaTextureObject_t N, Matrix P)
     int outCol = blockIdx.x * blockDim.x + threadIdx.x;
     int outRow = blockIdx.y * blockDim.y + threadIdx.y;
 
-    float Pvalue = 0.0f;
-    // for(int fRow = 0; fRow < 2 * (r + 1)) {
+    if (outCol >= P.width || outRow >= P.height) return;
 
-    // }
-    
+    float Pvalue = 0.0f;
+    for (int fy = -filter_rad; fy <= filter_rad; fy++) {
+        for (int fx = -filter_rad; fx <= filter_rad; fx++) {
+            float pixel = tex2D<float>(N, outCol + fx, outRow + fy);
+            // float weight = M_c[(fy + filter_rad) * FILTER_SIZE + (fx + filter_rad)];
+            float weight = M_c[fy + filter_rad][fx + filter_rad];
+            Pvalue += pixel * weight;
+        }
+    }    
+    P.elements[outRow * P.width + outCol] = Pvalue;
 }

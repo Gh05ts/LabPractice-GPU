@@ -19,7 +19,16 @@ cudaArray* allocateDeviceArray(unsigned height, unsigned width) {
 }
 
 cudaTextureObject_t allocateTex(cudaArray *cuArray, Matrix h_input, unsigned height, unsigned width) {
-    cudaMemcpyToArray(cuArray, 0, 0, h_input.elements, height * width * sizeof(float), cudaMemcpyHostToDevice);
+    // cudaMemcpyToArray(cuArray, 0, 0, h_input.elements, height * width * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy2DToArray(
+        cuArray,                     // destination CUDA array
+        0, 0,                        // offset in array
+        h_input.elements,                     // source pointer
+        width * sizeof(float),      // pitch (row size in bytes)
+        width * sizeof(float),      // width of the copy (in bytes)
+        height,                     // height of the copy (in rows)
+        cudaMemcpyHostToDevice      // direction
+    );
 
     cudaResourceDesc resDesc = {};
     resDesc.resType = cudaResourceTypeArray;
