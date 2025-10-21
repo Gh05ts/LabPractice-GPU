@@ -103,7 +103,6 @@ int main(int argc, char *argv[])
     // INSERT CODE HERE
     cudaMemcpyToSymbol(M_c, M_h.elements, sizeof(M_h), 0, cudaMemcpyHostToDevice);    
 
-
     if (cuda_ret != cudaSuccess)
         FATAL("Unable to copy to constant memory");
 
@@ -117,16 +116,14 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-
-
+    dim3 threads(16, 16);
+    dim3 blocks((imageWidth + 15) / 16, (imageHeight + 15) / 16);
 
     for (int i = 0; i < testRound; i++)
     {
         // INSERT CODE HERE
         // Call kernel function
-
-
-
+        convolution<<<blocks, threads>>>(N_d, P_d);
         cuda_ret = cudaDeviceSynchronize();
     }
 
