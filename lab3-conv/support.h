@@ -26,10 +26,10 @@ typedef struct
     float *elements;
 } Matrix;
 
-typedef struct {
-    cudaArray *cu;
-    cudaTextureObject_t tex;
-} Texture;
+// typedef struct {
+//     cudaArray *cu;
+//     cudaTextureObject_t tex;
+// } Texture;
 
 #define FILTER_SIZE 5
 #define TILE_SIZE 12
@@ -38,7 +38,8 @@ typedef struct {
 Matrix allocateMatrix(unsigned height, unsigned width);
 void initMatrix(Matrix mat);
 Matrix allocateDeviceMatrix(unsigned height, unsigned width);
-Texture allocateTex(Matrix h_input, unsigned height, unsigned width);
+cudaArray* allocateDeviceArray(unsigned height, unsigned width);
+cudaTextureObject_t allocateTex(cudaArray *cuArray, Matrix h_input, unsigned height, unsigned width);
 void copyToDeviceMatrix(Matrix dst, Matrix src);
 void copyFromDeviceMatrix(Matrix dst, Matrix src);
 void verify(Matrix M, Matrix N, Matrix P);

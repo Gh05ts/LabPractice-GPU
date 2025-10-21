@@ -23,7 +23,8 @@ int main(int argc, char *argv[])
 
     Matrix M_h, N_h, P_h; // M: filter, N: input image, P: output image
     Matrix P_d; // N_d, 
-    Texture N_d;
+    cudaArray *cu;
+    cudaTextureObject_t N_d;
     unsigned imageHeight, imageWidth;
     unsigned testRound; // how many rounds to run
     cudaError_t cuda_ret;
@@ -82,6 +83,7 @@ int main(int argc, char *argv[])
 
     // allocateDeviceMatrix(imageHeight, imageWidth);
     P_d = allocateDeviceMatrix(imageHeight, imageWidth);
+    cu = allocateDeviceArray(imageHeight, imageWidth);
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -95,7 +97,7 @@ int main(int argc, char *argv[])
 
     /* Copy image to device global memory */
     // copyToDeviceMatrix(N_d, N_h);
-    N_d = allocateTex(N_h, imageHeight, imageWidth);
+    N_d = allocateTex(cu, N_h, imageHeight, imageWidth);
 
     /* Copy mask to device constant memory */
     // INSERT CODE HERE
@@ -159,8 +161,8 @@ int main(int argc, char *argv[])
     freeMatrix(M_h);
     freeMatrix(N_h);
     freeMatrix(P_h);
-    cudaDestroyTextureObject(N_d.tex);
-    cudaFreeArray(N_d.cu);
+    cudaDestroyTextureObject(N_d);
+    cudaFreeArray(cu);
     freeDeviceMatrix(P_d);
 
     return 0;

@@ -11,11 +11,14 @@
 
 #include "support.h"
 
-Texture allocateTex(Matrix h_input, unsigned height, unsigned width) {
-    // CUDA array and texture setup
+cudaArray* allocateDeviceArray(unsigned height, unsigned width) {
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
     cudaArray* cuArray;
     cudaMallocArray(&cuArray, &channelDesc, width, height);
+    return cuArray;
+}
+
+cudaTextureObject_t allocateTex(cudaArray *cuArray, Matrix h_input, unsigned height, unsigned width) {
     cudaMemcpyToArray(cuArray, 0, 0, h_input.elements, height * width * sizeof(float), cudaMemcpyHostToDevice);
 
     cudaResourceDesc resDesc = {};
@@ -32,10 +35,10 @@ Texture allocateTex(Matrix h_input, unsigned height, unsigned width) {
     cudaTextureObject_t texObj = 0;
     cudaCreateTextureObject(&texObj, &resDesc, &texDesc, nullptr);
 
-    Texture tex;
-    tex.cu = cuArray;
-    tex.tex = texObj;
-    return tex;  
+    // Texture tex;
+    // tex.cu = cuArray;
+    // tex.tex = texObj;
+    return texObj;
 }
 
 Matrix allocateMatrix(unsigned height, unsigned width)
