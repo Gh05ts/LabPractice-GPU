@@ -31,12 +31,12 @@ typedef struct
 //     cudaTextureObject_t tex;
 // } Texture;
 
-#define FILTER_SIZE 5
+#define FILTER_SIZE 3
 #define TILE_SIZE 12
 #define BLOCK_SIZE (TILE_SIZE + FILTER_SIZE - 1)
 
 Matrix allocateMatrix(unsigned height, unsigned width);
-void initMatrix(Matrix mat);
+void initMatrix(Matrix mat, bool flag);
 Matrix allocateDeviceMatrix(unsigned height, unsigned width);
 cudaArray* allocateDeviceArray(unsigned height, unsigned width);
 cudaTextureObject_t allocateTex(cudaArray *cuArray, Matrix h_input, unsigned height, unsigned width);
@@ -48,6 +48,7 @@ void freeDeviceMatrix(Matrix mat);
 void startTime(Timer *timer);
 void stopTime(Timer *timer);
 float elapsedTime(Timer timer);
+void printMatrix(Matrix M);
 
 #define FATAL(msg, ...)                                 \
     do                                                  \

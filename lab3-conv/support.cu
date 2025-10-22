@@ -18,12 +18,22 @@ cudaArray* allocateDeviceArray(unsigned height, unsigned width) {
     return cuArray;
 }
 
+void printMatrix(Matrix M) {
+    for(int i = 0; i < M.height; i++) {
+        int x = i * M.width;
+        for(int j = 0; j < M.width; j++) {
+            printf("%f, ", M.elements[x + j]);
+        }
+        printf("\n");
+    }
+}
+
 cudaTextureObject_t allocateTex(cudaArray *cuArray, Matrix h_input, unsigned height, unsigned width) {
     // cudaMemcpyToArray(cuArray, 0, 0, h_input.elements, height * width * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy2DToArray(
-        cuArray,                     // destination CUDA array
-        0, 0,                        // offset in array
-        h_input.elements,                     // source pointer
+        cuArray,                    // destination CUDA array
+        0, 0,                       // offset in array
+        h_input.elements,           // source pointer
         width * sizeof(float),      // pitch (row size in bytes)
         width * sizeof(float),      // width of the copy (in bytes)
         height,                     // height of the copy (in rows)
@@ -37,6 +47,10 @@ cudaTextureObject_t allocateTex(cudaArray *cuArray, Matrix h_input, unsigned hei
     cudaTextureDesc texDesc = {};
     texDesc.addressMode[0] = cudaAddressModeClamp;
     texDesc.addressMode[1] = cudaAddressModeClamp;
+    // texDesc.borderColor[0] = 0.0f;
+    // texDesc.borderColor[1] = 0.0f;
+    // texDesc.borderColor[2] = 0.0f;
+    // texDesc.borderColor[3] = 0.0f;
     texDesc.filterMode = cudaFilterModePoint;
     texDesc.readMode = cudaReadModeElementType;
     texDesc.normalizedCoords = 0;
@@ -44,9 +58,6 @@ cudaTextureObject_t allocateTex(cudaArray *cuArray, Matrix h_input, unsigned hei
     cudaTextureObject_t texObj = 0;
     cudaCreateTextureObject(&texObj, &resDesc, &texDesc, nullptr);
 
-    // Texture tex;
-    // tex.cu = cuArray;
-    // tex.tex = texObj;
     return texObj;
 }
 
@@ -62,11 +73,14 @@ Matrix allocateMatrix(unsigned height, unsigned width)
     return mat;
 }
 
-void initMatrix(Matrix mat)
+void initMatrix(Matrix mat, bool flag)
 {
-    for (unsigned int i = 0; i < mat.height * mat.width; i++)
-    {
-        mat.elements[i] = (rand() % 100) / 100.00;
+    for (unsigned int i = 0; i < mat.height * mat.width; i++) {
+        if(flag) {
+            mat.elements[i] = 1;
+        } else {
+            mat.elements[i] = (rand() % 100) / 100.00;
+        }
     }
 }
 
@@ -122,6 +136,7 @@ void verify(Matrix M, Matrix N, Matrix P)
                     }
                 }
             }
+            // printf("expected elem: %f, got elem: %f\n", sum, P.elements[row * P.width + col]);
             float relativeError = (sum - P.elements[row * P.width + col]) / sum;
             if (relativeError > relativeTolerance || relativeError < -relativeTolerance)
             {

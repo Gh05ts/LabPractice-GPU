@@ -67,8 +67,8 @@ int main(int argc, char *argv[])
     P_h = allocateMatrix(imageHeight, imageWidth);
 
     /* Initialize filter and images */
-    initMatrix(M_h);
-    initMatrix(N_h);
+    initMatrix(M_h, true);
+    initMatrix(N_h, false);
 
     stopTime(&timer);
     printf("%f s\n", elapsedTime(timer));
@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
 
     /* Copy mask to device constant memory */
     // INSERT CODE HERE
-    cudaMemcpyToSymbol(M_c, M_h.elements, sizeof(M_h), 0, cudaMemcpyHostToDevice);    
+    // cudaMemcpyToSymbol(M_c, M_h.elements, sizeof(M_h.elements), 0, cudaMemcpyHostToDevice);
 
     if (cuda_ret != cudaSuccess)
         FATAL("Unable to copy to constant memory");
@@ -123,6 +123,8 @@ int main(int argc, char *argv[])
     {
         // INSERT CODE HERE
         // Call kernel function
+        // printf("\n");
+        // printMatrix(N_h);
         convolution<<<blocks, threads>>>(N_d, P_d);
         cuda_ret = cudaDeviceSynchronize();
     }
