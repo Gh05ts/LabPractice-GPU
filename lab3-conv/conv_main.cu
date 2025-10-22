@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
     P_h = allocateMatrix(imageHeight, imageWidth);
 
     /* Initialize filter and images */
-    initMatrix(M_h, true);
+    initMatrix(M_h, false);
     initMatrix(N_h, false);
 
     stopTime(&timer);
@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
 
     /* Copy mask to device constant memory */
     // INSERT CODE HERE
-    // cudaMemcpyToSymbol(M_c, M_h.elements, sizeof(M_h.elements), 0, cudaMemcpyHostToDevice);
+    cuda_ret = cudaMemcpyToSymbol(M_c, M_h.elements, sizeof(float) * M_h.height * M_h.width, 0, cudaMemcpyHostToDevice);
 
     if (cuda_ret != cudaSuccess)
         FATAL("Unable to copy to constant memory");
@@ -116,23 +116,22 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-    dim3 threads(16, 16);
-    dim3 blocks((imageWidth + 15) / 16, (imageHeight + 15) / 16);
+    // dim3 threads(16, 16);
+    dim_block = dim3(16, 16);
+    dim_grid = dim3((imageWidth + 15) / 16, (imageHeight + 15) / 16);
 
     for (int i = 0; i < testRound; i++)
     {
         // INSERT CODE HERE
         // Call kernel function
-        // printf("\n");
-        // printMatrix(N_h);
-        convolution<<<blocks, threads>>>(N_d, P_d);
+        convolution<<<dim_grid, dim_block>>>(N_d, P_d);
         cuda_ret = cudaDeviceSynchronize();
     }
 
     if (cuda_ret != cudaSuccess)
         FATAL("Unable to launch/execute kernel");
 
-    cudaDeviceSynchronize();
+    // cudaDeviceSynchronize();
     stopTime(&timer);
     printf("%f s for %d round, i.e., %f/round\n", elapsedTime(timer), testRound, elapsedTime(timer) / testRound);
 

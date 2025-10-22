@@ -1,6 +1,6 @@
 
 NVCC        = nvcc
-NVCC_FLAGS  = -I/usr/local/cuda/include # -O3
+NVCC_FLAGS  = -O3 -I/usr/local/cuda/include # -O3
 LD_FLAGS    = -lcudart -L/usr/local/cuda/lib64
 EXE	        = convolution
 OBJ	        = conv_main.o support.o

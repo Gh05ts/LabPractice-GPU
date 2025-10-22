@@ -14,7 +14,7 @@
 cudaArray* allocateDeviceArray(unsigned height, unsigned width) {
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
     cudaArray* cuArray;
-    cudaMallocArray(&cuArray, &channelDesc, width, height);
+    cudaMallocArray(&cuArray, &channelDesc, width, height, cudaArrayDefault);
     return cuArray;
 }
 
@@ -31,13 +31,13 @@ void printMatrix(Matrix M) {
 cudaTextureObject_t allocateTex(cudaArray *cuArray, Matrix h_input, unsigned height, unsigned width) {
     // cudaMemcpyToArray(cuArray, 0, 0, h_input.elements, height * width * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy2DToArray(
-        cuArray,                    // destination CUDA array
-        0, 0,                       // offset in array
-        h_input.elements,           // source pointer
-        width * sizeof(float),      // pitch (row size in bytes)
-        width * sizeof(float),      // width of the copy (in bytes)
-        height,                     // height of the copy (in rows)
-        cudaMemcpyHostToDevice      // direction
+        cuArray,
+        0, 0,
+        h_input.elements,
+        width * sizeof(float),
+        width * sizeof(float),
+        height,
+        cudaMemcpyHostToDevice
     );
 
     cudaResourceDesc resDesc = {};
@@ -45,12 +45,12 @@ cudaTextureObject_t allocateTex(cudaArray *cuArray, Matrix h_input, unsigned hei
     resDesc.res.array.array = cuArray;
 
     cudaTextureDesc texDesc = {};
-    texDesc.addressMode[0] = cudaAddressModeClamp;
-    texDesc.addressMode[1] = cudaAddressModeClamp;
-    // texDesc.borderColor[0] = 0.0f;
-    // texDesc.borderColor[1] = 0.0f;
-    // texDesc.borderColor[2] = 0.0f;
-    // texDesc.borderColor[3] = 0.0f;
+    texDesc.addressMode[0] = cudaAddressModeBorder;
+    texDesc.addressMode[1] = cudaAddressModeBorder;
+    texDesc.borderColor[0] = 0.0f;
+    texDesc.borderColor[1] = 0.0f;
+    texDesc.borderColor[2] = 0.0f;
+    texDesc.borderColor[3] = 0.0f;
     texDesc.filterMode = cudaFilterModePoint;
     texDesc.readMode = cudaReadModeElementType;
     texDesc.normalizedCoords = 0;
@@ -136,7 +136,6 @@ void verify(Matrix M, Matrix N, Matrix P)
                     }
                 }
             }
-            // printf("expected elem: %f, got elem: %f\n", sum, P.elements[row * P.width + col]);
             float relativeError = (sum - P.elements[row * P.width + col]) / sum;
             if (relativeError > relativeTolerance || relativeError < -relativeTolerance)
             {

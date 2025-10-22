@@ -26,12 +26,7 @@ typedef struct
     float *elements;
 } Matrix;
 
-// typedef struct {
-//     cudaArray *cu;
-//     cudaTextureObject_t tex;
-// } Texture;
-
-#define FILTER_SIZE 3
+#define FILTER_SIZE 5
 #define TILE_SIZE 12
 #define BLOCK_SIZE (TILE_SIZE + FILTER_SIZE - 1)
 
