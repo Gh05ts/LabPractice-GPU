@@ -70,7 +70,7 @@ main( int argc, char** argv)
                deviceProp.major);
         printf("  Minor revision number:                         %d\n",
                deviceProp.minor);
-        printf("  Total amount of global memory:                 %u bytes\n",
+        printf("  Total amount of global memory:                 %zu bytes\n",
                deviceProp.totalGlobalMem);
     #if CUDART_VERSION >= 2000
         printf("  Number of multiprocessors:                     %d\n",
@@ -106,6 +106,11 @@ main( int argc, char** argv)
         printf("  Concurrent copy and execution:                 %s\n",
                deviceProp.deviceOverlap ? "Yes" : "No");
     #endif
+        printf("  maxTexture2D[0] (max width):                   %d\n",
+	       deviceProp.maxTexture2D[0]);
+
+	printf("  maxTexture2D[1] (max height):                  %d\n",
+	       deviceProp.maxTexture2D[1]);
     }
     printf("\nTEST PASSED\n");
 }
