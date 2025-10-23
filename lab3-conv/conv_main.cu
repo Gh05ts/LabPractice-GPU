@@ -118,7 +118,7 @@ int main(int argc, char *argv[])
     // INSERT CODE HERE
     // dim3 threads(16, 16);
     dim_block = dim3(16, 16);
-    dim_grid = dim3((imageWidth + 15) / 16, (imageHeight + 15) / 16);
+    dim_grid = dim3((imageWidth + (16*1 - 1)) / 16*1, (imageHeight + (16*1 - 1)) / 16*1);
 
     for (int i = 0; i < testRound; i++)
     {
