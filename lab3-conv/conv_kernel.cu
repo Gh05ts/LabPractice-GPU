@@ -57,24 +57,30 @@ void convolution(Matrix N, Matrix P) {
     ********************************************************************/
 
     constexpr const int filter_rad = (FILTER_SIZE - 1) / 2;
+    __shared__ float N_Sh[BLOCK_SIZE][BLOCK_SIZE];
 
-    // INSERT KERNEL CODE HERE
-    int outCol = blockIdx.x * blockDim.x + threadIdx.x;
-    int outRow = blockIdx.y * blockDim.y + threadIdx.y;
+    int row = BLOCK_SIZE * blockIdx.y + threadIdx.y;
+    int col = BLOCK_SIZE * blockIdx.x + threadIdx.x;
 
-    if (outCol >= P.width || outRow >= P.height) return;
+    int srow = row - filter_rad;
+    int scol = col - filter_rad;
 
-    float Pvalue = 0.0f;
-    for (int fy = -filter_rad; fy <= filter_rad; fy++) {
-        for (int fx = -filter_rad; fx <= filter_rad; fx++) {
-            int inpX = outCol + fx;
-            int inpY = fy + outRow;
-            int filY = fy + filter_rad;
-            int filX = fx + filter_rad;
-            float pixel = N.elements[inpX + inpY * N.width];
-            float weight = M_c[filY][filX];
-            Pvalue += pixel * weight;
+    for(int i = threadIdx.y; i < TILE_SIZE; i += BLOCK_SIZE) {
+        for(int j = threadIdx.x; j < TILE_SIZE; j += BLOCK_SIZE) {
+            int ssrow = srow + i;
+            int sscol = scol + j;
+
+            if(ssrow >= 0 && ssrow < N.height && sscol >= 0 && sscol < N.width) {
+                N_Sh[ssrow][sscol] = N.elements[ssrow * N.width + sscol];
+            } else {
+                N_Sh[ssrow][sscol] = 0.0f;
+            }
         }
-    }    
-    P.elements[outRow * P.width + outCol] = Pvalue;
+    }
+    __syncthreads();
+
+    if(row < N.height && col < N.width) {
+        float acc = 0.0f;
+        
+    }
 }

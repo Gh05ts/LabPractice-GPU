@@ -27,8 +27,8 @@ typedef struct
 } Matrix;
 
 #define FILTER_SIZE 5
-#define TILE_SIZE 12
-#define BLOCK_SIZE (TILE_SIZE + FILTER_SIZE - 1)
+#define TILE_SIZE 16 + (FILTER_SIZE-1)/2
+#define BLOCK_SIZE 16
 
 Matrix allocateMatrix(unsigned height, unsigned width);
 void initMatrix(Matrix mat, bool flag);
