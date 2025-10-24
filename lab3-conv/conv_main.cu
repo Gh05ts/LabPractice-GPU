@@ -165,8 +165,10 @@ int main(int argc, char *argv[])
     freeMatrix(M_h);
     freeMatrix(N_h);
     freeMatrix(P_h);
+
     cudaDestroyTextureObject(Nt_d);
     cudaFreeArray(cu);
+
     freeDeviceMatrix(P_d);
 
     return 0;

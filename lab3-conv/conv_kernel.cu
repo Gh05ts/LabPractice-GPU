@@ -32,7 +32,7 @@ void convolutionTex(cudaTextureObject_t N, Matrix P) {
 
     if (outCol >= P.width || outRow >= P.height) return;
 
-    float Pvalue = 0.0f;
+    float Psum = 0.0f;
     for (int fy = -filter_rad; fy <= filter_rad; fy++) {
         for (int fx = -filter_rad; fx <= filter_rad; fx++) {
             int inpX = outCol + fx;
@@ -41,10 +41,10 @@ void convolutionTex(cudaTextureObject_t N, Matrix P) {
             int filX = fx + filter_rad;
             float pixel = tex2D<float>(N, inpX, inpY);
             float weight = M_c[filY][filX];
-            Pvalue += pixel * weight;
+            Psum += pixel * weight;
         }
     }    
-    P.elements[outRow * P.width + outCol] = Pvalue;
+    P.elements[outRow * P.width + outCol] = Psum;
 }
 
 __global__ 
