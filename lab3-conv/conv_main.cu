@@ -134,6 +134,11 @@ int main(int argc, char *argv[])
         cuda_ret = cudaDeviceSynchronize();
     }
 
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA Kernel Error: %s\n", cudaGetErrorString(err));
+        // Handle the error (e.g., exit, log, clean up resources)
+    }
     if (cuda_ret != cudaSuccess)
         FATAL("Unable to launch/execute kernel");
 

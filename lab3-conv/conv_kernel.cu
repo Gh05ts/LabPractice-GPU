@@ -57,7 +57,7 @@ void convolution(Matrix N, Matrix P) {
     ********************************************************************/
 
     constexpr const int filter_rad = (FILTER_SIZE - 1) / 2;
-    __shared__ float N_Sh[BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ float N_Sh[TILE_SIZE][TILE_SIZE];
 
     int row = BLOCK_SIZE * blockIdx.y + threadIdx.y;
     int col = BLOCK_SIZE * blockIdx.x + threadIdx.x;
@@ -81,6 +81,18 @@ void convolution(Matrix N, Matrix P) {
 
     if(row < N.height && col < N.width) {
         float acc = 0.0f;
-        
+        int sx = threadIdx.x + filter_rad;
+        int sy = threadIdx.y + filter_rad;
+
+        #pragma unroll
+        for(int ky = -filter_rad; ky <= filter_rad; ky++) {
+            #pragma unroll
+            for(int kx = -filter_rad; kx <= filter_rad; kx++) {
+                float pix = N_Sh[sy + ky][sx + kx];
+                float w = M_c[ky + filter_rad][kx + filter_rad];
+                acc += pix * w;
+            }
+        }
+        P.elements[row * N.width + col] = acc;
     }
 }

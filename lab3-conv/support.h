@@ -27,7 +27,7 @@ typedef struct
 } Matrix;
 
 #define FILTER_SIZE 5
-#define TILE_SIZE 16 + (FILTER_SIZE-1)/2
+#define TILE_SIZE 16 + 2*(FILTER_SIZE-1)/2
 #define BLOCK_SIZE 16
 
 Matrix allocateMatrix(unsigned height, unsigned width);
