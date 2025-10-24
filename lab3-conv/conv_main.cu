@@ -9,7 +9,6 @@
 #include <stdio.h>
 #include "support.h"
 #include "conv_kernel.cu"
-#include "nppi.h"
 
 int main(int argc, char *argv[])
 {
@@ -22,15 +21,13 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     Matrix M_h, N_h, P_h; // M: filter, N: input image, P: output image
-    Matrix P_d; // N_d, 
+    Matrix P_d, N_d; 
     cudaArray *cu;
-    cudaTextureObject_t N_d;
+    cudaTextureObject_t Nt_d;
     unsigned imageHeight, imageWidth;
     unsigned testRound; // how many rounds to run
     cudaError_t cuda_ret;
     dim3 dim_grid, dim_block;
-
-    // nppiFilter_8u_C1R()
 
     /* Read image dimensions */
     if (argc == 1)
@@ -81,9 +78,12 @@ int main(int argc, char *argv[])
     fflush(stdout);
     startTime(&timer);
 
-    // allocateDeviceMatrix(imageHeight, imageWidth);
     P_d = allocateDeviceMatrix(imageHeight, imageWidth);
-    cu = allocateDeviceArray(imageHeight, imageWidth);
+    if(imageHeight * imageWidth < 2048 * 2048) {
+        cu = allocateDeviceArray(imageHeight, imageWidth);
+    } else {
+        N_d = allocateDeviceMatrix(imageHeight, imageWidth);
+    }
 
     cudaDeviceSynchronize();
     stopTime(&timer);
@@ -96,8 +96,11 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     /* Copy image to device global memory */
-    // copyToDeviceMatrix(N_d, N_h);
-    N_d = allocateTex(cu, N_h, imageHeight, imageWidth);
+    if (imageHeight * imageWidth < 2048 * 2048) {
+        Nt_d = allocateTex(cu, N_h, imageHeight, imageWidth);
+    } else {
+        copyToDeviceMatrix(N_d, N_h);
+    }
 
     /* Copy mask to device constant memory */
     // INSERT CODE HERE
@@ -116,7 +119,6 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     // INSERT CODE HERE
-    // dim3 threads(16, 16);
     dim_block = dim3(16, 16);
     dim_grid = dim3((imageWidth + (16*1 - 1)) / 16*1, (imageHeight + (16*1 - 1)) / 16*1);
 
@@ -124,7 +126,11 @@ int main(int argc, char *argv[])
     {
         // INSERT CODE HERE
         // Call kernel function
-        convolution<<<dim_grid, dim_block>>>(N_d, P_d);
+        if(imageHeight * imageWidth < 2048 * 2048) {
+            convolutionTex<<<dim_grid, dim_block>>>(Nt_d, P_d);
+        } else {
+            convolution<<<dim_grid, dim_block>>>(N_d, P_d);
+        }
         cuda_ret = cudaDeviceSynchronize();
     }
 
@@ -159,7 +165,7 @@ int main(int argc, char *argv[])
     freeMatrix(M_h);
     freeMatrix(N_h);
     freeMatrix(P_h);
-    cudaDestroyTextureObject(N_d);
+    cudaDestroyTextureObject(Nt_d);
     cudaFreeArray(cu);
     freeDeviceMatrix(P_d);
 

@@ -66,7 +66,8 @@ Matrix allocateMatrix(unsigned height, unsigned width)
     Matrix mat;
     mat.height = height;
     mat.width = mat.pitch = width;
-    mat.elements = (float *)malloc(height * width * sizeof(float));
+    // mat.elements = (float *)malloc(height * width * sizeof(float));
+    cudaHostAlloc(&mat.elements, height * width * sizeof(float), cudaHostAllocDefault);
     if (mat.elements == NULL)
         FATAL("Unable to allocate host");
 
@@ -149,7 +150,8 @@ void verify(Matrix M, Matrix N, Matrix P)
 
 void freeMatrix(Matrix mat)
 {
-    free(mat.elements);
+    cudaFree(mat.elements);
+    // free(mat.elements);
     mat.elements = NULL;
 }
 
