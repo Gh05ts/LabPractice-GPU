@@ -332,6 +332,7 @@ void convolution_tiled_per_thread(Matrix N, Matrix P) {
 //     }
 // }
 
+// __launch_bounds__(256)
 __global__
 void convolution_tiled_per_thread_vec(Matrix N, Matrix P) {
     // Shared tile (with halo), 16-byte aligned for vectorized stores
