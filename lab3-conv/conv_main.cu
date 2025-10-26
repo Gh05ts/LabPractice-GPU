@@ -120,6 +120,9 @@ int main(int argc, char *argv[])
 
     // INSERT CODE HERE
     dim_block = dim3(BLOCK_SIZE, BLOCK_SIZE);
+    int tileW = BLOCK_SIZE * OUTPT;
+    int tileH = BLOCK_SIZE * OUTPT;
+    dim3 grid((imageWidth + tileW - 1) / tileW, (imageHeight + tileH - 1) / tileH);
     dim_grid = dim3((imageWidth + (BLOCK_SIZE*1 - 1)) / BLOCK_SIZE*1, (imageHeight + (BLOCK_SIZE*1 - 1)) / BLOCK_SIZE*1);
 
     for (int i = 0; i < testRound; i++)
@@ -129,7 +132,10 @@ int main(int argc, char *argv[])
         if(imageHeight * imageWidth < 2048 * 2048) {
             convolutionTex<<<dim_grid, dim_block>>>(Nt_d, P_d);
         } else {
-            convolution<<<dim_grid, dim_block>>>(N_d, P_d);
+            // convolution<<<dim_grid, dim_block>>>(N_d, P_d);
+            // convolution_tiled_per_thread<<<grid, dim_block>>>(N_d, P_d);
+            // conv_shared_to_regs_safe<<<grid, dim_block>>>(N_d, P_d);
+            convolution_tiled_per_thread_vec<<<grid, dim_block>>>(N_d, P_d);
         }
         cuda_ret = cudaDeviceSynchronize();
     }
