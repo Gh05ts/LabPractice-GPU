@@ -74,13 +74,36 @@ Matrix allocateMatrix(unsigned height, unsigned width)
     return mat;
 }
 
-void initMatrix(Matrix mat, bool flag)
+void initMatrix(Matrix mat, bool flag, int originalWidth)
 {
-    for (unsigned int i = 0; i < mat.height * mat.width; i++) {
+    for (unsigned int x = 0; x < mat.height * mat.width; x++) {
         if(flag) {
-            mat.elements[i] = 1;
+            mat.elements[x] = (rand() % 100) / 100.00;
         } else {
-            mat.elements[i] = (rand() % 100) / 100.00;
+            // mat.elements[i] = (rand() % 100) / 100.00;
+            int i = x / mat.width;  // row
+            int j = x % mat.width;  // col
+
+            int val;
+            // top 2 rows or bottom 2 rows
+            if (i < 2 || i >= mat.height - 4 + 2) {
+                if (j < 2 || (j >= originalWidth + 2 && j <= originalWidth + 3)) {
+                    val = 0;   // inside padded frame
+                } else {
+                    val = rand() % 100 / 100.0;  // outside frame → random
+                }
+            }
+            // middle rows (contain real data)
+            else {
+                if (j < 2 || (j >= originalWidth + 2 && j <= originalWidth + 3)) {
+                    val = 0;   // left/right padding
+                } else if (j <= originalWidth + 1) {
+                    val = rand() % 100 / 100.0;  // real data region
+                } else {
+                    val = rand() % 100 / 100.0;  // beyond right padding → random
+                }
+            }
+            mat.elements[x] = val;
         }
     }
 }

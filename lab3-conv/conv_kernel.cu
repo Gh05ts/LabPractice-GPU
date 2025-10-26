@@ -383,20 +383,19 @@ void convolution_tiled_per_thread_vec(Matrix N, Matrix P) {
             const int inCol = sOriginCol + c4 * vecWidth;
 
             float4 v4 = make_float4(0.f, 0.f, 0.f, 0.f);
-            if ((unsigned)inRow < (unsigned)N.height &&
-                (unsigned)(inCol + 3) < (unsigned)N.width) {
+            if ((unsigned)inRow < (unsigned)N.height) { // && (unsigned)(inCol + 3) < (unsigned)N.width
                 const float4* gptr = reinterpret_cast<const float4*>(&N.elements[inRow * N.width + inCol]);
                 v4 = *gptr;
             } else {
                 float tmp[4] = {0.f, 0.f, 0.f, 0.f};
-                #pragma unroll
-                for (int lane = 0; lane < 4; ++lane) {
-                    const int ic = inCol + lane;
-                    if ((unsigned)inRow < (unsigned)N.height &&
-                        (unsigned)ic < (unsigned)N.width) {
-                        tmp[lane] = N.elements[inRow * N.width + ic];
-                    }
-                }
+                // #pragma unroll
+                // for (int lane = 0; lane < 4; ++lane) {
+                //     const int ic = inCol + lane;
+                //     if ((unsigned)inRow < (unsigned)N.height &&
+                //         (unsigned)ic < (unsigned)N.width) {
+                //         tmp[lane] = N.elements[inRow * N.width + ic];
+                //     }
+                // }
                 v4 = make_float4(tmp[0], tmp[1], tmp[2], tmp[3]);
             }
 
@@ -457,23 +456,9 @@ void convolution_tiled_per_thread_vec(Matrix N, Matrix P) {
                 }
             }
 
-            // Vectorized store when aligned and within right border, otherwise scalar
-            // const bool canVecStore = ((P.width - outCol) >= 4) && ((outCol & 3) == 0) && (((outRow * P.width + outCol) & 3) == 0);
-
-                float4 outv = make_float4(acc0, acc1, acc2, acc3);
-                float4* gptr = reinterpret_cast<float4*>(&P.elements[outRow * P.width + outCol]);
-                *gptr = outv;
-            // if (canVecStore) {
-            // } else {
-            //     if ((unsigned)outCol < (unsigned)P.width)
-            //         P.elements[outRow * P.width + outCol + 0] = acc0;
-            //     if ((unsigned)(outCol + 1) < (unsigned)P.width)
-            //         P.elements[outRow * P.width + outCol + 1] = acc1;
-            //     if ((unsigned)(outCol + 2) < (unsigned)P.width)
-            //         P.elements[outRow * P.width + outCol + 2] = acc2;
-            //     if ((unsigned)(outCol + 3) < (unsigned)P.width)
-            //         P.elements[outRow * P.width + outCol + 3] = acc3;
-            // }
+            float4 outv = make_float4(acc0, acc1, acc2, acc3);
+            float4* gptr = reinterpret_cast<float4*>(&P.elements[outRow * P.width + outCol]);
+            *gptr = outv;
         }
     }
 }
@@ -609,3 +594,105 @@ void convolution_tiled_per_thread_vec(Matrix N, Matrix P) {
 //         }
 //     }
 // }
+
+__global__
+void convolution_tiled_per_thread_vec_safe(Matrix N, Matrix P) {
+    // Assumptions:
+    // - N.elements is 128B aligned.
+    // - N has a zero-padded frame >= FILTER_RAD on all sides.
+    // - S_WIDTH % 4 == 0, sOriginCol % 4 == 0.
+
+    __shared__ __align__(16) float N_Sh[S_HEIGHT][S_WIDTH];
+
+    const int tx = threadIdx.x;
+    const int ty = threadIdx.y;
+    const int threadsPerBlockX = blockDim.x;
+    const int threadsPerBlockY = blockDim.y;
+    const int tid = ty * threadsPerBlockX + tx;
+    const int nThreads = threadsPerBlockX * threadsPerBlockY;
+
+    const int outBlockRow = blockIdx.y * TILE_OUT_DIM;
+    const int outBlockCol = blockIdx.x * TILE_OUT_DIM;
+
+    const int threadOutRow0 = outBlockRow + ty * OUTPT;
+    const int threadOutCol0 = outBlockCol + tx * OUTPT;
+
+    const int sOriginRow = outBlockRow - FILTER_RAD;
+    const int sOriginCol = outBlockCol - FILTER_RAD;
+
+    // Unconditional vectorized fill (float4)
+    {
+        const int vecWidth = 4;                        // 16B per transaction
+        const int sCols4 = S_WIDTH / vecWidth;         // number of float4 per row
+        const int sSize4 = S_HEIGHT * sCols4;          // total float4 vectors in tile
+
+        for (int idx4 = tid; idx4 < sSize4; idx4 += nThreads) {
+            const int r  = idx4 / sCols4;              // shared tile row
+            const int c4 = idx4 % sCols4;              // float4 column index
+            const int inRow = sOriginRow + r;
+            const int inCol = sOriginCol + c4 * vecWidth;
+
+            // Because N is pre-padded and aligned, we can load directly with no checks.
+            const float4* gptr = reinterpret_cast<const float4*>(
+                &N.elements[inRow * N.width + inCol]
+            );
+            float4 v4 = *gptr;
+
+            float4* sptr = reinterpret_cast<float4*>(&N_Sh[r][c4 * vecWidth]);
+            *sptr = v4;
+
+            // Optionally on sm80+:
+            // cp.async.ca.shared.global(&N_Sh[r][c4 * vecWidth], &N.elements[inRow * N.width + inCol], 16);
+        }
+    }
+
+    __syncthreads();
+    // If using cp.async, insert cp.async.commit_group() and cp.async.wait_group(0) before sync (sm80+).
+
+    // Local starting index inside shared memory for this thread's first output
+    const int sx0 = tx * OUTPT + FILTER_RAD;
+    const int sy0 = ty * OUTPT + FILTER_RAD;
+
+    // Compute OUTPT x OUTPT outputs per thread; vectorize stores along x (4-wide)
+    for (int oy = 0; oy < OUTPT; ++oy) {
+        const int outRow = threadOutRow0 + oy;
+        // If P has 2-row/2-col zero padding similar to N, outRow is guaranteed valid
+        // Remove this check if P is padded; otherwise keep:
+        if ((unsigned)outRow >= (unsigned)P.height) continue;
+
+        for (int ox = 0; ox < OUTPT; ox += 4) {
+            const int outCol = threadOutCol0 + ox;
+
+            float acc0 = 0.f, acc1 = 0.f, acc2 = 0.f, acc3 = 0.f;
+            const int py = sy0 + oy;
+            const int px0 = sx0 + ox;
+
+            #pragma unroll
+            for (int ky = -FILTER_RAD; ky <= FILTER_RAD; ++ky) {
+                #pragma unroll
+                for (int kx = -FILTER_RAD; kx <= FILTER_RAD; ++kx) {
+                    const float w  = M_c[ky + FILTER_RAD][kx + FILTER_RAD];
+                    const int sry = py + ky;
+                    const int scx = px0 + kx;
+
+                    const float p0 = N_Sh[sry][scx + 0];
+                    const float p1 = N_Sh[sry][scx + 1];
+                    const float p2 = N_Sh[sry][scx + 2];
+                    const float p3 = N_Sh[sry][scx + 3];
+
+                    acc0 += p0 * w;
+                    acc1 += p1 * w;
+                    acc2 += p2 * w;
+                    acc3 += p3 * w;
+                }
+            }
+
+            // If P has right padding >= 2 and 4-wide store fits, write unconditionally:
+            float4 outv = make_float4(acc0, acc1, acc2, acc3);
+            float4* gptr = reinterpret_cast<float4*>(&P.elements[outRow * P.width + outCol]);
+            *gptr = outv;
+
+            // If P is not padded/aligned, restore a guarded scalar tail for the last block row/col.
+        }
+    }
+}

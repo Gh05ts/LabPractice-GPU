@@ -32,7 +32,7 @@ typedef struct
 // #define BLOCK_SIZE 16
 
 Matrix allocateMatrix(unsigned height, unsigned width);
-void initMatrix(Matrix mat, bool flag);
+void initMatrix(Matrix mat, bool flag, int originalWidth);
 Matrix allocateDeviceMatrix(unsigned height, unsigned width);
 Matrix allocateDeviceMatrixPitched(unsigned height, unsigned width);
 cudaArray* allocateDeviceArray(unsigned height, unsigned width);
