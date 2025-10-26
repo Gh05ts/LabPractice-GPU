@@ -10,6 +10,10 @@
 #include "support.h"
 #include "conv_kernel.cu"
 
+bool checkTex(int imageHeight, int imageWidth) {
+    return imageHeight < 128 && imageWidth < 128;
+}
+
 int main(int argc, char *argv[])
 {
     Timer timer;
@@ -25,7 +29,6 @@ int main(int argc, char *argv[])
     cudaArray *cu;
     cudaTextureObject_t Nt_d;
     unsigned imageHeight, imageWidth;
-    // , originalWidth;
     unsigned testRound; // how many rounds to run
     cudaError_t cuda_ret;
     dim3 dim_grid, dim_block;
@@ -59,9 +62,9 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    // originalWidth = imageWidth;
-    imageWidth += 128 - imageWidth % 128;
-    // imageHeight += 4;
+    if(!checkTex(imageHeight, imageWidth)) {
+        imageWidth += 128 - imageWidth % 128;
+    }
 
     /* Allocate host memory */
     M_h = allocateMatrix(FILTER_SIZE, FILTER_SIZE);
@@ -84,7 +87,7 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     P_d = allocateDeviceMatrix(imageHeight, imageWidth);
-    if(imageHeight * imageWidth < 2048 * 2048) {
+    if(checkTex(imageHeight, imageWidth)) {
         cu = allocateDeviceArray(imageHeight, imageWidth);
     } else {
         N_d = allocateDeviceMatrix(imageHeight, imageWidth);
@@ -101,7 +104,7 @@ int main(int argc, char *argv[])
     startTime(&timer);
 
     /* Copy image to device global memory */
-    if (imageHeight * imageWidth < 2048 * 2048) {
+    if (checkTex(imageHeight, imageWidth)) {
         Nt_d = allocateTex(cu, N_h, imageHeight, imageWidth);
     } else {
         copyToDeviceMatrix(N_d, N_h);
@@ -134,12 +137,9 @@ int main(int argc, char *argv[])
     {
         // INSERT CODE HERE
         // Call kernel function
-        if(imageHeight * imageWidth < 2048 * 2048) {
+        if(checkTex(imageHeight, imageWidth)) {
             convolutionTex<<<dim_grid, dim_block>>>(Nt_d, P_d);
         } else {
-            // convolution<<<dim_grid, dim_block>>>(N_d, P_d);
-            // convolution_tiled_per_thread<<<grid, dim_block>>>(N_d, P_d);
-            // conv_shared_to_regs_safe<<<grid, dim_block>>>(N_d, P_d);
             convolution_tiled_per_thread_vec<<<grid, dim_block>>>(N_d, P_d);
         }
         cuda_ret = cudaDeviceSynchronize();
