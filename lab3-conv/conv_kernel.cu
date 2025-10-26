@@ -50,9 +50,6 @@ void convolution(Matrix N, Matrix P) {
     Apply the filter on the input image tile
     Write the compute values to the output image at the correct indexes
     ********************************************************************/
-
-    // constexpr const int filter_rad = (FILTER_SIZE - 1) / 2;
-    // printf("TILE SIZE: %d", TILE_SIZE);
     __shared__ float N_Sh[TILE_SIZE][TILE_SIZE];
 
     int row = blockDim.y * blockIdx.y + threadIdx.y;
@@ -153,7 +150,7 @@ void convolution_tiled_per_thread(Matrix N, Matrix P) {
 
 __global__
 void convolution_tiled_per_thread_vec(Matrix __restrict__ N, Matrix __restrict__ P) {
-    __shared__ __align__(16) float N_Sh[S_HEIGHT][S_WIDTH]; // + 1 to width
+    __shared__ __align__(16) float N_Sh[S_HEIGHT][S_WIDTH];
 
     const int outBlockRow = blockIdx.y * TILE_OUT_DIM;
     const int outBlockCol = blockIdx.x * TILE_OUT_DIM;
@@ -171,11 +168,11 @@ void convolution_tiled_per_thread_vec(Matrix __restrict__ N, Matrix __restrict__
     const int sOriginRow = outBlockRow - FILTER_RAD;
     const int sOriginCol = outBlockCol - FILTER_RAD;
 
-    const int sSize = S_WIDTH * S_HEIGHT; // +1 to width
+    const int sSize = S_WIDTH * S_HEIGHT;
 
     for (int idx = tid; idx < sSize; idx += nThreads) {
-        const int r = idx / S_WIDTH; // +1 to width
-        const int c = idx % S_WIDTH; // +1 to width
+        const int r = idx / S_WIDTH;
+        const int c = idx % S_WIDTH;
         const int inRow = sOriginRow + r;
         const int inCol = sOriginCol + c;
         float v = 0.0f;
@@ -183,15 +180,6 @@ void convolution_tiled_per_thread_vec(Matrix __restrict__ N, Matrix __restrict__
             v = N.elements[inRow * N.width + inCol];
         }
         N_Sh[r][c] = v;
-        // if (c < S_WIDTH) {
-        //     const int inRow = sOriginRow + r;
-        //     const int inCol = sOriginCol + c;
-        //     float v = 0.0f;
-        //     if ((unsigned)inRow < (unsigned)N.height && (unsigned)inCol < (unsigned)N.width) {
-        //         v = N.elements[inRow * N.width + inCol];
-        //     }
-        //     N_Sh[r][c] = v;
-        // }
     }
 
     __syncthreads();
@@ -236,6 +224,3 @@ void convolution_tiled_per_thread_vec(Matrix __restrict__ N, Matrix __restrict__
         }
     }
 }
-
-// cp.async.ca.shared.global(&N_Sh[r][c4 * vecWidth], &N.elements[inRow * N.width + inCol], 16);
-// cp.async.commit_group() and cp.async.wait_group(0) for sync.
