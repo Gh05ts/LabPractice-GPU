@@ -28,6 +28,7 @@ void convolutionTex(cudaTextureObject_t N, Matrix P) {
     if (outCol >= P.width || outRow >= P.height) return;
 
     float Psum = 0.0f;
+    #pragma unroll
     for (int fy = -filter_rad; fy <= filter_rad; fy++) {
         for (int fx = -filter_rad; fx <= filter_rad; fx++) {
             int inpX = outCol + fx;
@@ -150,7 +151,8 @@ void convolution_tiled_per_thread(Matrix N, Matrix P) {
 
 __global__
 void convolution_tiled_per_thread_vec(Matrix __restrict__ N, Matrix __restrict__ P) {
-    __shared__ __align__(16) float N_Sh[S_HEIGHT][S_WIDTH];
+    //  __align__(16)
+    __shared__ float N_Sh[S_HEIGHT][S_WIDTH];
 
     const int outBlockRow = blockIdx.y * TILE_OUT_DIM;
     const int outBlockCol = blockIdx.x * TILE_OUT_DIM;
