@@ -26,14 +26,15 @@ typedef struct
     float *elements;
 } Matrix;
 
-#define FILTER_SIZE 5
-#define FILTER_RAD (FILTER_SIZE - 1)/2
-#define TILE_SIZE 16 + 2*FILTER_RAD
-#define BLOCK_SIZE 16
+// #define FILTER_SIZE 5
+// #define FILTER_RAD (FILTER_SIZE - 1)/2
+// #define TILE_SIZE 16 + 2*FILTER_RAD
+// #define BLOCK_SIZE 16
 
 Matrix allocateMatrix(unsigned height, unsigned width);
 void initMatrix(Matrix mat, bool flag);
 Matrix allocateDeviceMatrix(unsigned height, unsigned width);
+Matrix allocateDeviceMatrixPitched(unsigned height, unsigned width);
 cudaArray* allocateDeviceArray(unsigned height, unsigned width);
 cudaTextureObject_t allocateTex(cudaArray *cuArray, Matrix h_input, unsigned height, unsigned width);
 void copyToDeviceMatrix(Matrix dst, Matrix src);

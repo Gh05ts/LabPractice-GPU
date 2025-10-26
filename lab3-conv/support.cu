@@ -99,6 +99,21 @@ Matrix allocateDeviceMatrix(unsigned height, unsigned width)
     return mat;
 }
 
+Matrix allocateDeviceMatrixPitched(unsigned height, unsigned width) {
+    Matrix mat;
+    cudaError_t cuda_ret;
+
+    mat.height = height;
+    mat.width = width;
+    size_t pitch;
+    cuda_ret = cudaMallocPitch(&mat.elements, &pitch, width*sizeof(float), height);
+    if (cuda_ret != cudaSuccess)
+        FATAL("Unable to allocate device memory");
+
+    mat.pitch = pitch;
+    return mat;
+}
+
 void copyToDeviceMatrix(Matrix dst, Matrix src)
 {
     cudaError_t cuda_ret;
@@ -110,6 +125,7 @@ void copyToDeviceMatrix(Matrix dst, Matrix src)
 void copyFromDeviceMatrix(Matrix dst, Matrix src)
 {
     cudaError_t cuda_ret;
+    // cudaMemcpy2D(dst.elements, , src.elements)
     cuda_ret = cudaMemcpy(dst.elements, src.elements, src.height * src.width * sizeof(float), cudaMemcpyDeviceToHost);
     if (cuda_ret != cudaSuccess)
         FATAL("Unable to copy from device");

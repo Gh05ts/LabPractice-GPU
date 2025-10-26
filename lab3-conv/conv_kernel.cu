@@ -9,12 +9,21 @@
 #include "support.h"
 // #include "stdio.h"
 
+#define FILTER_SIZE 5
+#define FILTER_RAD (FILTER_SIZE - 1)/2
+#define TILE_SIZE 16 + 2*FILTER_RAD
+#define BLOCK_SIZE 16
+
 __constant__ float M_c[FILTER_SIZE][FILTER_SIZE];
 #define OUTPT 4
 #define TILE_OUT_DIM (BLOCK_SIZE * OUTPT)
-#define S_WIDTH (TILE_OUT_DIM + 2*FILTER_RAD)
+// #define S_WIDTH (TILE_OUT_DIM + 2*FILTER_RAD)
 #define S_HEIGHT (TILE_OUT_DIM + 2*FILTER_RAD)
 #define P_DIM (OUTPT + 2*FILTER_RAD)
+
+#define VECW 4
+#define S_WIDTH_REQ (TILE_OUT_DIM + 2 * FILTER_RAD + (VECW - 1))
+#define S_WIDTH (((S_WIDTH_REQ + 3) / 4) * 4)
 
 using Vec4 = float4;
 
@@ -449,23 +458,154 @@ void convolution_tiled_per_thread_vec(Matrix N, Matrix P) {
             }
 
             // Vectorized store when aligned and within right border, otherwise scalar
-            const bool canVecStore =
-                ((P.width - outCol) >= 4) && ((outCol & 3) == 0);
+            // const bool canVecStore = ((P.width - outCol) >= 4) && ((outCol & 3) == 0) && (((outRow * P.width + outCol) & 3) == 0);
 
-            if (canVecStore) {
                 float4 outv = make_float4(acc0, acc1, acc2, acc3);
                 float4* gptr = reinterpret_cast<float4*>(&P.elements[outRow * P.width + outCol]);
                 *gptr = outv;
-            } else {
-                if ((unsigned)outCol < (unsigned)P.width)
-                    P.elements[outRow * P.width + outCol + 0] = acc0;
-                if ((unsigned)(outCol + 1) < (unsigned)P.width)
-                    P.elements[outRow * P.width + outCol + 1] = acc1;
-                if ((unsigned)(outCol + 2) < (unsigned)P.width)
-                    P.elements[outRow * P.width + outCol + 2] = acc2;
-                if ((unsigned)(outCol + 3) < (unsigned)P.width)
-                    P.elements[outRow * P.width + outCol + 3] = acc3;
-            }
+            // if (canVecStore) {
+            // } else {
+            //     if ((unsigned)outCol < (unsigned)P.width)
+            //         P.elements[outRow * P.width + outCol + 0] = acc0;
+            //     if ((unsigned)(outCol + 1) < (unsigned)P.width)
+            //         P.elements[outRow * P.width + outCol + 1] = acc1;
+            //     if ((unsigned)(outCol + 2) < (unsigned)P.width)
+            //         P.elements[outRow * P.width + outCol + 2] = acc2;
+            //     if ((unsigned)(outCol + 3) < (unsigned)P.width)
+            //         P.elements[outRow * P.width + outCol + 3] = acc3;
+            // }
         }
     }
 }
+
+// __global__
+// void convolution_tiled_per_thread_vec_safe(Matrix N, Matrix P) {
+//     // Shared tile with halo and right padding (VECW-1), 16B aligned
+//     __shared__ __align__(16) float N_Sh[S_HEIGHT][S_WIDTH];
+
+//     // Block origin in output coordinates
+//     const int outBlockRow = blockIdx.y * TILE_OUT_DIM;
+//     const int outBlockCol = blockIdx.x * TILE_OUT_DIM;
+
+//     // Thread info
+//     const int tx = threadIdx.x;
+//     const int ty = threadIdx.y;
+//     const int threadsPerBlockX = blockDim.x;
+//     const int threadsPerBlockY = blockDim.y;
+//     const int tid = ty * threadsPerBlockX + tx;
+//     const int nThreads = threadsPerBlockX * threadsPerBlockY;
+
+//     // This thread's first output
+//     const int threadOutRow0 = outBlockRow + ty * OUTPT;
+//     const int threadOutCol0 = outBlockCol + tx * OUTPT;
+
+//     // Shared tile origin in input (includes halo)
+//     const int sOriginRow = outBlockRow - FILTER_RAD;
+//     const int sOriginCol = outBlockCol - FILTER_RAD;
+
+//     // Cooperative load into shared: vectorized along X when aligned
+//     const bool canVecLoad = ((sOriginCol & (VECW - 1)) == 0) && ((S_WIDTH & (VECW - 1)) == 0);
+//     const int sSize = S_WIDTH * S_HEIGHT;
+
+//     if (canVecLoad) {
+//         const int sCols4 = S_WIDTH / VECW;
+//         const int sSize4 = S_HEIGHT * sCols4;
+
+//         for (int idx4 = tid; idx4 < sSize4; idx4 += nThreads) {
+//             const int r  = idx4 / sCols4;
+//             const int c4 = idx4 % sCols4;
+//             const int inRow = sOriginRow + r;
+//             const int inCol = sOriginCol + c4 * VECW;
+
+//             float4 v4 = make_float4(0.f, 0.f, 0.f, 0.f);
+//             if ((unsigned)inRow < (unsigned)N.height &&
+//                 (unsigned)(inCol + (VECW - 1)) < (unsigned)N.width) {
+//                 const float4* gptr = reinterpret_cast<const float4*>(
+//                     &N.elements[inRow * N.width + inCol]);
+//                 v4 = *gptr;
+//             } else {
+//                 float tmp[VECW] = {0.f, 0.f, 0.f, 0.f};
+//                 #pragma unroll
+//                 for (int lane = 0; lane < VECW; ++lane) {
+//                     const int ic = inCol + lane;
+//                     if ((unsigned)inRow < (unsigned)N.height &&
+//                         (unsigned)ic < (unsigned)N.width) {
+//                         tmp[lane] = N.elements[inRow * N.width + ic];
+//                     }
+//                 }
+//                 v4 = make_float4(tmp[0], tmp[1], tmp[2], tmp[3]);
+//             }
+
+//             float4* sptr = reinterpret_cast<float4*>(&N_Sh[r][c4 * VECW]);
+//             *sptr = v4;
+//         }
+//     } else {
+//         // Scalar fallback
+//         for (int idx = tid; idx < sSize; idx += nThreads) {
+//             const int r = idx / S_WIDTH;
+//             const int c = idx % S_WIDTH;
+//             const int inRow = sOriginRow + r;
+//             const int inCol = sOriginCol + c;
+//             float v = 0.0f;
+//             if ((unsigned)inRow < (unsigned)N.height && (unsigned)inCol < (unsigned)N.width) {
+//                 v = N.elements[inRow * N.width + inCol];
+//             }
+//             N_Sh[r][c] = v;
+//         }
+//     }
+
+//     __syncthreads();
+
+//     // Local starting index inside shared for this thread's first output
+//     const int sx0 = tx * OUTPT + FILTER_RAD;
+//     const int sy0 = ty * OUTPT + FILTER_RAD;
+
+//     // Compute OUTPT x OUTPT outputs per thread (OUTPT == 4 => single 4-wide chunk along X)
+//     #pragma unroll
+//     for (int oy = 0; oy < OUTPT; ++oy) {
+//         const int outRow = threadOutRow0 + oy;
+//         if ((unsigned)outRow >= (unsigned)P.height) continue;
+
+//         const int outCol = threadOutCol0;  // ox = 0 .. 3 packed
+//         const int gIndex = outRow * P.width + outCol;
+
+//         float acc0 = 0.f, acc1 = 0.f, acc2 = 0.f, acc3 = 0.f;
+//         const int py = sy0 + oy;
+//         const int px0 = sx0;
+
+//         #pragma unroll
+//         for (int ky = -FILTER_RAD; ky <= FILTER_RAD; ++ky) {
+//             const int sry = py + ky;
+//             #pragma unroll
+//             for (int kx = -FILTER_RAD; kx <= FILTER_RAD; ++kx) {
+//                 const float w  = M_c[ky + FILTER_RAD][kx + FILTER_RAD];
+//                 const int scx = px0 + kx;
+
+//                 const float p0 = N_Sh[sry][scx + 0];
+//                 const float p1 = N_Sh[sry][scx + 1];
+//                 const float p2 = N_Sh[sry][scx + 2];
+//                 const float p3 = N_Sh[sry][scx + 3];
+
+//                 acc0 += p0 * w;
+//                 acc1 += p1 * w;
+//                 acc2 += p2 * w;
+//                 acc3 += p3 * w;
+//             }
+//         }
+
+//         // Vectorized store when globally aligned and room for 4 values; scalar otherwise
+//         const bool roomRight = ((P.width - outCol) >= VECW);
+//         const bool alignedGlobalIndex = ((gIndex & (VECW - 1)) == 0);
+
+//         if (roomRight && alignedGlobalIndex) {
+//             float4 outv = make_float4(acc0, acc1, acc2, acc3);
+//             float4* gptr = reinterpret_cast<float4*>(&P.elements[gIndex]);
+//             *gptr = outv;
+//         } else {
+//             if ((unsigned)outCol < (unsigned)P.width)       P.elements[gIndex + 0] = acc0;
+//             if ((unsigned)(outCol + 1) < (unsigned)P.width) P.elements[gIndex + 1] = acc1;
+//             if ((unsigned)(outCol + 2) < (unsigned)P.width) P.elements[gIndex + 2] = acc2;
+//             if ((unsigned)(outCol + 3) < (unsigned)P.width) P.elements[gIndex + 3] = acc3;
+//         }
+//     }
+// }

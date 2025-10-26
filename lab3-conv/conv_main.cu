@@ -25,6 +25,7 @@ int main(int argc, char *argv[])
     cudaArray *cu;
     cudaTextureObject_t Nt_d;
     unsigned imageHeight, imageWidth;
+    // , originalWidth;
     unsigned testRound; // how many rounds to run
     cudaError_t cuda_ret;
     dim3 dim_grid, dim_block;
@@ -57,6 +58,9 @@ int main(int argc, char *argv[])
                "\n");
         exit(0);
     }
+
+    // originalWidth = imageWidth;
+    imageWidth += 128 - imageWidth % 128;
 
     /* Allocate host memory */
     M_h = allocateMatrix(FILTER_SIZE, FILTER_SIZE);
