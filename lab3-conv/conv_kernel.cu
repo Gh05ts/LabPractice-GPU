@@ -7,29 +7,8 @@
  ******************************************************************************/
 
 #include "support.h"
-// #include "stdio.h"
-
-#define FILTER_SIZE 5
-#define FILTER_RAD (FILTER_SIZE - 1)/2
-#define TILE_SIZE 16 + 2*FILTER_RAD
-#define BLOCK_SIZE 16
 
 __constant__ float M_c[FILTER_SIZE][FILTER_SIZE];
-#define OUTPT 4
-#define TILE_OUT_DIM (BLOCK_SIZE * OUTPT)
-// #define S_WIDTH (TILE_OUT_DIM + 2*FILTER_RAD)
-#define S_HEIGHT (TILE_OUT_DIM + 2*FILTER_RAD)
-#define P_DIM (OUTPT + 2*FILTER_RAD)
-
-#define VECW 4
-#define S_WIDTH_REQ (TILE_OUT_DIM + 2 * FILTER_RAD + (VECW - 1))
-#define S_WIDTH (((S_WIDTH_REQ + 3) / 4) * 4)
-
-using Vec4 = float4;
-
-// #define OUTPT 2
-// constexpr int filter_rad = (FILTER_SIZE - 1) / 2;
-// constexpr int PATCH = OUTPT + 2*filter_rad;
 
 __global__ 
 void convolutionTex(cudaTextureObject_t N, Matrix P) {
@@ -101,7 +80,7 @@ void convolution(Matrix N, Matrix P) {
         int sx = threadIdx.x + FILTER_RAD;
         int sy = threadIdx.y + FILTER_RAD;
 
-        // #pragma unroll
+        #pragma unroll
         for(int ky = -FILTER_RAD; ky <= FILTER_RAD; ky++) {
             for(int kx = -FILTER_RAD; kx <= FILTER_RAD; kx++) {
                 float pix = N_Sh[sy + ky][sx + kx];
@@ -115,14 +94,11 @@ void convolution(Matrix N, Matrix P) {
 
 __global__
 void convolution_tiled_per_thread(Matrix N, Matrix P) {
-    // Shared tile sized S_HEIGHT x S_WIDTH
     __shared__ float N_Sh[S_HEIGHT][S_WIDTH];
 
-    // block origin in output coordinate space (top-left output pixel for this block)
     const int outBlockRow = blockIdx.y * TILE_OUT_DIM;
     const int outBlockCol = blockIdx.x * TILE_OUT_DIM;
 
-    // thread coordinates inside block
     const int tx = threadIdx.x;
     const int ty = threadIdx.y;
     const int threadsPerBlockX = blockDim.x;
@@ -130,15 +106,12 @@ void convolution_tiled_per_thread(Matrix N, Matrix P) {
     const int tid = ty * threadsPerBlockX + tx;
     const int nThreads = threadsPerBlockX * threadsPerBlockY;
 
-    // global coordinates of the first output this thread will produce
     const int threadOutRow0 = outBlockRow + ty * OUTPT;
     const int threadOutCol0 = outBlockCol + tx * OUTPT;
 
-    // Shared tile origin in input coordinates (includes halo)
     const int sOriginRow = outBlockRow - FILTER_RAD;
     const int sOriginCol = outBlockCol - FILTER_RAD;
 
-    // Cooperative fill of shared memory (linearized index, stride by nThreads)
     const int sSize = S_WIDTH * S_HEIGHT;
     for (int idx = tid; idx < sSize; idx += nThreads) {
         const int r = idx / S_WIDTH;
@@ -153,20 +126,15 @@ void convolution_tiled_per_thread(Matrix N, Matrix P) {
     }
     __syncthreads();
 
-    // Local starting index inside shared memory for this thread's first output
     const int sx0 = tx * OUTPT + FILTER_RAD;
     const int sy0 = ty * OUTPT + FILTER_RAD;
 
-
-
-    // compute OUTPT x OUTPT outputs per thread
     for (int oy = 0; oy < OUTPT; ++oy) {
         const int outRow = threadOutRow0 + oy;
-        // optional early-out per-row if entire row outside image
-        if ((unsigned)outRow >= (unsigned)P.height) continue;
+        if ((unsigned)outRow >= (unsigned)P.height) return;
         for (int ox = 0; ox < OUTPT; ++ox) {
             const int outCol = threadOutCol0 + ox;
-            if ((unsigned)outCol >= (unsigned)P.width) continue; // single predicate per output
+            if ((unsigned)outCol >= (unsigned)P.width) continue;
             float acc = 0.0f;
             const int py = sy0 + oy;
             const int px = sx0 + ox;
@@ -183,175 +151,13 @@ void convolution_tiled_per_thread(Matrix N, Matrix P) {
     }
 }
 
-// __global__
-// void conv_shared_to_regs(Matrix N, Matrix P) {
-//     // shared tile: [row][col]
-//     __shared__ float sTile[S_HEIGHT][S_WIDTH];
-
-//     // block origin in OUTPUT space (top-left output produced by this block)
-//     const int outBlockRow = blockIdx.y * TILE_OUT_DIM; // Y
-//     const int outBlockCol = blockIdx.x * TILE_OUT_DIM; // X
-
-//     // thread coords in block
-//     const int tx = threadIdx.x; // 0..BLOCK_SIZE-1 (col in block)
-//     const int ty = threadIdx.y; // 0..BLOCK_SIZE-1 (row in block)
-//     const int threadsX = blockDim.x;
-//     const int threadsY = blockDim.y;
-//     const int tid = ty * threadsX + tx;
-//     const int nThreads = threadsX * threadsY;
-
-//     // shared tile origin in INPUT coords (top-left pixel loaded into sTile[0][0])
-//     const int sOriginRow = outBlockRow - FILTER_RAD; // Y
-//     const int sOriginCol = outBlockCol - FILTER_RAD; // X
-
-//     // cooperative fill of sTile (row-major linear index)
-//     const int sSize = S_WIDTH * S_HEIGHT;
-//     for (int lin = tid; lin < sSize; lin += nThreads) {
-//         const int r = lin / S_WIDTH; // row index inside sTile (Y)
-//         const int c = lin % S_WIDTH; // col index inside sTile (X)
-//         const int inRow = sOriginRow + r; // input Y
-//         const int inCol = sOriginCol + c; // input X
-//         float v = 0.0f;
-//         if ((unsigned)inRow < (unsigned)N.height && (unsigned)inCol < (unsigned)N.width) {
-//             v = N.elements[inRow * N.width + inCol]; // row-major load
-//         }
-//         sTile[r][c] = v;
-//     }
-//     __syncthreads();
-
-//     // this thread's first output coordinates (global)
-//     const int threadOutRow0 = outBlockRow + ty * OUTPT; // Y
-//     const int threadOutCol0 = outBlockCol + tx * OUTPT; // X
-
-//     // per-thread register patch of size P_DIM x P_DIM
-//     float patch[P_DIM][P_DIM];
-
-//     // top-left of patch inside sTile (row and col offsets)
-//     const int sy0 = ty * OUTPT + FILTER_RAD; // row offset
-//     const int sx0 = tx * OUTPT + FILTER_RAD; // col offset
-
-//     // copy patch from shared memory into registers
-//     #pragma unroll
-//     for (int pr = 0; pr < P_DIM; ++pr) {
-//         #pragma unroll
-//         for (int pc = 0; pc < P_DIM; ++pc) {
-//             patch[pr][pc] = sTile[sy0 + pr][sx0 + pc];
-//         }
-//     }
-
-//     // compute OUTPT x OUTPT outputs using the register patch
-//     for (int oy = 0; oy < OUTPT; ++oy) {
-//         const int outRow = threadOutRow0 + oy; // Y
-//         if ((unsigned)outRow >= (unsigned)P.height) continue; // single row predicate
-//         for (int ox = 0; ox < OUTPT; ++ox) {
-//             const int outCol = threadOutCol0 + ox; // X
-//             if ((unsigned)outCol >= (unsigned)P.width) continue; // single col predicate
-//             float acc = 0.0f;
-//             const int pr0 = oy; // patch row start
-//             const int pc0 = ox; // patch col start
-//             #pragma unroll
-//             for (int ky = 0; ky < FILTER_SIZE; ++ky) {
-//                 #pragma unroll
-//                 for (int kx = 0; kx < FILTER_SIZE; ++kx) {
-//                     acc += patch[pr0 + ky][pc0 + kx] * M_c[ky][kx];
-//                 }
-//             }
-//             P.elements[outRow * P.width + outCol] = acc;
-//         }
-//     }
-// }
-
-// __global__
-// void conv_shared_to_regs_safe(Matrix N, Matrix P) {
-//     __shared__ float sTile[S_HEIGHT][S_WIDTH];
-
-//     const int outBlockRow = blockIdx.y * TILE_OUT_DIM; // Y
-//     const int outBlockCol = blockIdx.x * TILE_OUT_DIM; // X
-
-//     const int tx = threadIdx.x;
-//     const int ty = threadIdx.y;
-//     const int threadsX = blockDim.x;
-//     const int threadsY = blockDim.y;
-//     const int tid = ty * threadsX + tx;
-//     const int nThreads = threadsX * threadsY;
-
-//     const int sOriginRow = outBlockRow - FILTER_RAD; // Y
-//     const int sOriginCol = outBlockCol - FILTER_RAD; // X
-
-//     // Cooperative fill; elements outside image become 0.0f
-//     const int sSize = S_WIDTH * S_HEIGHT;
-//     for (int idx = tid; idx < sSize; idx += nThreads) {
-//         const int r = idx / S_WIDTH; // row in sTile (Y)
-//         const int c = idx % S_WIDTH; // col in sTile (X)
-//         const int inRow = sOriginRow + r;
-//         const int inCol = sOriginCol + c;
-//         float v = 0.0f;
-//         if ((unsigned)inRow < (unsigned)N.height && (unsigned)inCol < (unsigned)N.width) {
-//             v = N.elements[inRow * N.width + inCol];
-//         }
-//         sTile[r][c] = v;
-//     }
-//     __syncthreads();
-
-//     const int threadOutRow0 = outBlockRow + ty * OUTPT; // Y
-//     const int threadOutCol0 = outBlockCol + tx * OUTPT; // X
-
-//     // per-thread register patch
-//     float patch[P_DIM][P_DIM];
-
-//     // top-left inside sTile
-//     const int sy0 = ty * OUTPT + FILTER_RAD; // row offset
-//     const int sx0 = tx * OUTPT + FILTER_RAD; // col offset
-
-//     // SAFE copy: check bounds against sTile extents before reading
-//     #pragma unroll
-//     for (int pr = 0; pr < P_DIM; ++pr) {
-//         #pragma unroll
-//         for (int pc = 0; pc < P_DIM; ++pc) {
-//             const int sR = sy0 + pr;
-//             const int sC = sx0 + pc;
-//             // these tests protect against any host/compile-time mismatch or partial loads
-//             if ((unsigned)sR < (unsigned)S_HEIGHT && (unsigned)sC < (unsigned)S_WIDTH) {
-//                 patch[pr][pc] = sTile[sR][sC];
-//             } else {
-//                 patch[pr][pc] = 0.0f;
-//             }
-//         }
-//     }
-
-//     // compute outputs (single predicate per output)
-//     for (int oy = 0; oy < OUTPT; ++oy) {
-//         const int outRow = threadOutRow0 + oy;
-//         if ((unsigned)outRow >= (unsigned)P.height) continue;
-//         for (int ox = 0; ox < OUTPT; ++ox) {
-//             const int outCol = threadOutCol0 + ox;
-//             if ((unsigned)outCol >= (unsigned)P.width) continue;
-//             float acc = 0.0f;
-//             const int pr0 = oy;
-//             const int pc0 = ox;
-//             #pragma unroll
-//             for (int ky = 0; ky < FILTER_SIZE; ++ky) {
-//                 #pragma unroll
-//                 for (int kx = 0; kx < FILTER_SIZE; ++kx) {
-//                     acc += patch[pr0 + ky][pc0 + kx] * M_c[ky][kx];
-//                 }
-//             }
-//             P.elements[outRow * P.width + outCol] = acc;
-//         }
-//     }
-// }
-
-// __launch_bounds__(256)
 __global__
-void convolution_tiled_per_thread_vec(Matrix N, Matrix P) {
-    // Shared tile (with halo), 16-byte aligned for vectorized stores
-    __shared__ __align__(16) float N_Sh[S_HEIGHT][S_WIDTH];
+void convolution_tiled_per_thread_vec(Matrix __restrict__ N, Matrix __restrict__ P) {
+    __shared__ __align__(16) float N_Sh[S_HEIGHT][S_WIDTH]; // + 1 to width
 
-    // Block origin in output coordinates (top-left output pixel for this block)
     const int outBlockRow = blockIdx.y * TILE_OUT_DIM;
     const int outBlockCol = blockIdx.x * TILE_OUT_DIM;
 
-    // Thread info
     const int tx = threadIdx.x;
     const int ty = threadIdx.y;
     const int threadsPerBlockX = blockDim.x;
@@ -359,71 +165,40 @@ void convolution_tiled_per_thread_vec(Matrix N, Matrix P) {
     const int tid = ty * threadsPerBlockX + tx;
     const int nThreads = threadsPerBlockX * threadsPerBlockY;
 
-    // First output this thread will produce
     const int threadOutRow0 = outBlockRow + ty * OUTPT;
     const int threadOutCol0 = outBlockCol + tx * OUTPT;
 
-    // Shared tile origin in input coords (includes halo)
     const int sOriginRow = outBlockRow - FILTER_RAD;
     const int sOriginCol = outBlockCol - FILTER_RAD;
 
-    // Cooperative fill of shared memory
-    const int sSize = S_WIDTH * S_HEIGHT;
-    const bool canVecLoad = ((sOriginCol & 3) == 0) && ((S_WIDTH & 3) == 0);
+    const int sSize = S_WIDTH * S_HEIGHT; // +1 to width
 
-    if (canVecLoad) {
-        const int vecWidth = 4;
-        const int sCols4 = S_WIDTH / vecWidth;
-        const int sSize4 = S_HEIGHT * sCols4;
-
-        for (int idx4 = tid; idx4 < sSize4; idx4 += nThreads) {
-            const int r  = idx4 / sCols4;
-            const int c4 = idx4 % sCols4;
-            const int inRow = sOriginRow + r;
-            const int inCol = sOriginCol + c4 * vecWidth;
-
-            float4 v4 = make_float4(0.f, 0.f, 0.f, 0.f);
-            if ((unsigned)inRow < (unsigned)N.height) { // && (unsigned)(inCol + 3) < (unsigned)N.width
-                const float4* gptr = reinterpret_cast<const float4*>(&N.elements[inRow * N.width + inCol]);
-                v4 = *gptr;
-            } else {
-                float tmp[4] = {0.f, 0.f, 0.f, 0.f};
-                // #pragma unroll
-                // for (int lane = 0; lane < 4; ++lane) {
-                //     const int ic = inCol + lane;
-                //     if ((unsigned)inRow < (unsigned)N.height &&
-                //         (unsigned)ic < (unsigned)N.width) {
-                //         tmp[lane] = N.elements[inRow * N.width + ic];
-                //     }
-                // }
-                v4 = make_float4(tmp[0], tmp[1], tmp[2], tmp[3]);
-            }
-
-            float4* sptr = reinterpret_cast<float4*>(&N_Sh[r][c4 * vecWidth]);
-            *sptr = v4;
+    for (int idx = tid; idx < sSize; idx += nThreads) {
+        const int r = idx / S_WIDTH; // +1 to width
+        const int c = idx % S_WIDTH; // +1 to width
+        const int inRow = sOriginRow + r;
+        const int inCol = sOriginCol + c;
+        float v = 0.0f;
+        if ((unsigned)inRow < (unsigned)N.height && (unsigned)inCol < (unsigned)N.width) {
+            v = N.elements[inRow * N.width + inCol];
         }
-    } else {
-        // Scalar fallback for misalignment cases
-        for (int idx = tid; idx < sSize; idx += nThreads) {
-            const int r = idx / S_WIDTH;
-            const int c = idx % S_WIDTH;
-            const int inRow = sOriginRow + r;
-            const int inCol = sOriginCol + c;
-            float v = 0.0f;
-            if ((unsigned)inRow < (unsigned)N.height && (unsigned)inCol < (unsigned)N.width) {
-                v = N.elements[inRow * N.width + inCol];
-            }
-            N_Sh[r][c] = v;
-        }
+        N_Sh[r][c] = v;
+        // if (c < S_WIDTH) {
+        //     const int inRow = sOriginRow + r;
+        //     const int inCol = sOriginCol + c;
+        //     float v = 0.0f;
+        //     if ((unsigned)inRow < (unsigned)N.height && (unsigned)inCol < (unsigned)N.width) {
+        //         v = N.elements[inRow * N.width + inCol];
+        //     }
+        //     N_Sh[r][c] = v;
+        // }
     }
 
     __syncthreads();
 
-    // Local starting index inside shared memory for this thread's first output
     const int sx0 = tx * OUTPT + FILTER_RAD;
     const int sy0 = ty * OUTPT + FILTER_RAD;
 
-    // Compute OUTPT x OUTPT outputs per thread; vectorize stores along x (4-wide)
     for (int oy = 0; oy < OUTPT; ++oy) {
         const int outRow = threadOutRow0 + oy;
         if ((unsigned)outRow >= (unsigned)P.height) continue;
@@ -431,7 +206,6 @@ void convolution_tiled_per_thread_vec(Matrix N, Matrix P) {
         for (int ox = 0; ox < OUTPT; ox += 4) {
             const int outCol = threadOutCol0 + ox;
 
-            // Accumulate 4 adjacent outputs in registers
             float acc0 = 0.f, acc1 = 0.f, acc2 = 0.f, acc3 = 0.f;
             const int py = sy0 + oy;
             const int px0 = sx0 + ox;
@@ -463,236 +237,5 @@ void convolution_tiled_per_thread_vec(Matrix N, Matrix P) {
     }
 }
 
-// __global__
-// void convolution_tiled_per_thread_vec_safe(Matrix N, Matrix P) {
-//     // Shared tile with halo and right padding (VECW-1), 16B aligned
-//     __shared__ __align__(16) float N_Sh[S_HEIGHT][S_WIDTH];
-
-//     // Block origin in output coordinates
-//     const int outBlockRow = blockIdx.y * TILE_OUT_DIM;
-//     const int outBlockCol = blockIdx.x * TILE_OUT_DIM;
-
-//     // Thread info
-//     const int tx = threadIdx.x;
-//     const int ty = threadIdx.y;
-//     const int threadsPerBlockX = blockDim.x;
-//     const int threadsPerBlockY = blockDim.y;
-//     const int tid = ty * threadsPerBlockX + tx;
-//     const int nThreads = threadsPerBlockX * threadsPerBlockY;
-
-//     // This thread's first output
-//     const int threadOutRow0 = outBlockRow + ty * OUTPT;
-//     const int threadOutCol0 = outBlockCol + tx * OUTPT;
-
-//     // Shared tile origin in input (includes halo)
-//     const int sOriginRow = outBlockRow - FILTER_RAD;
-//     const int sOriginCol = outBlockCol - FILTER_RAD;
-
-//     // Cooperative load into shared: vectorized along X when aligned
-//     const bool canVecLoad = ((sOriginCol & (VECW - 1)) == 0) && ((S_WIDTH & (VECW - 1)) == 0);
-//     const int sSize = S_WIDTH * S_HEIGHT;
-
-//     if (canVecLoad) {
-//         const int sCols4 = S_WIDTH / VECW;
-//         const int sSize4 = S_HEIGHT * sCols4;
-
-//         for (int idx4 = tid; idx4 < sSize4; idx4 += nThreads) {
-//             const int r  = idx4 / sCols4;
-//             const int c4 = idx4 % sCols4;
-//             const int inRow = sOriginRow + r;
-//             const int inCol = sOriginCol + c4 * VECW;
-
-//             float4 v4 = make_float4(0.f, 0.f, 0.f, 0.f);
-//             if ((unsigned)inRow < (unsigned)N.height &&
-//                 (unsigned)(inCol + (VECW - 1)) < (unsigned)N.width) {
-//                 const float4* gptr = reinterpret_cast<const float4*>(
-//                     &N.elements[inRow * N.width + inCol]);
-//                 v4 = *gptr;
-//             } else {
-//                 float tmp[VECW] = {0.f, 0.f, 0.f, 0.f};
-//                 #pragma unroll
-//                 for (int lane = 0; lane < VECW; ++lane) {
-//                     const int ic = inCol + lane;
-//                     if ((unsigned)inRow < (unsigned)N.height &&
-//                         (unsigned)ic < (unsigned)N.width) {
-//                         tmp[lane] = N.elements[inRow * N.width + ic];
-//                     }
-//                 }
-//                 v4 = make_float4(tmp[0], tmp[1], tmp[2], tmp[3]);
-//             }
-
-//             float4* sptr = reinterpret_cast<float4*>(&N_Sh[r][c4 * VECW]);
-//             *sptr = v4;
-//         }
-//     } else {
-//         // Scalar fallback
-//         for (int idx = tid; idx < sSize; idx += nThreads) {
-//             const int r = idx / S_WIDTH;
-//             const int c = idx % S_WIDTH;
-//             const int inRow = sOriginRow + r;
-//             const int inCol = sOriginCol + c;
-//             float v = 0.0f;
-//             if ((unsigned)inRow < (unsigned)N.height && (unsigned)inCol < (unsigned)N.width) {
-//                 v = N.elements[inRow * N.width + inCol];
-//             }
-//             N_Sh[r][c] = v;
-//         }
-//     }
-
-//     __syncthreads();
-
-//     // Local starting index inside shared for this thread's first output
-//     const int sx0 = tx * OUTPT + FILTER_RAD;
-//     const int sy0 = ty * OUTPT + FILTER_RAD;
-
-//     // Compute OUTPT x OUTPT outputs per thread (OUTPT == 4 => single 4-wide chunk along X)
-//     #pragma unroll
-//     for (int oy = 0; oy < OUTPT; ++oy) {
-//         const int outRow = threadOutRow0 + oy;
-//         if ((unsigned)outRow >= (unsigned)P.height) continue;
-
-//         const int outCol = threadOutCol0;  // ox = 0 .. 3 packed
-//         const int gIndex = outRow * P.width + outCol;
-
-//         float acc0 = 0.f, acc1 = 0.f, acc2 = 0.f, acc3 = 0.f;
-//         const int py = sy0 + oy;
-//         const int px0 = sx0;
-
-//         #pragma unroll
-//         for (int ky = -FILTER_RAD; ky <= FILTER_RAD; ++ky) {
-//             const int sry = py + ky;
-//             #pragma unroll
-//             for (int kx = -FILTER_RAD; kx <= FILTER_RAD; ++kx) {
-//                 const float w  = M_c[ky + FILTER_RAD][kx + FILTER_RAD];
-//                 const int scx = px0 + kx;
-
-//                 const float p0 = N_Sh[sry][scx + 0];
-//                 const float p1 = N_Sh[sry][scx + 1];
-//                 const float p2 = N_Sh[sry][scx + 2];
-//                 const float p3 = N_Sh[sry][scx + 3];
-
-//                 acc0 += p0 * w;
-//                 acc1 += p1 * w;
-//                 acc2 += p2 * w;
-//                 acc3 += p3 * w;
-//             }
-//         }
-
-//         // Vectorized store when globally aligned and room for 4 values; scalar otherwise
-//         const bool roomRight = ((P.width - outCol) >= VECW);
-//         const bool alignedGlobalIndex = ((gIndex & (VECW - 1)) == 0);
-
-//         if (roomRight && alignedGlobalIndex) {
-//             float4 outv = make_float4(acc0, acc1, acc2, acc3);
-//             float4* gptr = reinterpret_cast<float4*>(&P.elements[gIndex]);
-//             *gptr = outv;
-//         } else {
-//             if ((unsigned)outCol < (unsigned)P.width)       P.elements[gIndex + 0] = acc0;
-//             if ((unsigned)(outCol + 1) < (unsigned)P.width) P.elements[gIndex + 1] = acc1;
-//             if ((unsigned)(outCol + 2) < (unsigned)P.width) P.elements[gIndex + 2] = acc2;
-//             if ((unsigned)(outCol + 3) < (unsigned)P.width) P.elements[gIndex + 3] = acc3;
-//         }
-//     }
-// }
-
-__global__
-void convolution_tiled_per_thread_vec_safe(Matrix N, Matrix P) {
-    // Assumptions:
-    // - N.elements is 128B aligned.
-    // - N has a zero-padded frame >= FILTER_RAD on all sides.
-    // - S_WIDTH % 4 == 0, sOriginCol % 4 == 0.
-
-    __shared__ __align__(16) float N_Sh[S_HEIGHT][S_WIDTH];
-
-    const int tx = threadIdx.x;
-    const int ty = threadIdx.y;
-    const int threadsPerBlockX = blockDim.x;
-    const int threadsPerBlockY = blockDim.y;
-    const int tid = ty * threadsPerBlockX + tx;
-    const int nThreads = threadsPerBlockX * threadsPerBlockY;
-
-    const int outBlockRow = blockIdx.y * TILE_OUT_DIM;
-    const int outBlockCol = blockIdx.x * TILE_OUT_DIM;
-
-    const int threadOutRow0 = outBlockRow + ty * OUTPT;
-    const int threadOutCol0 = outBlockCol + tx * OUTPT;
-
-    const int sOriginRow = outBlockRow - FILTER_RAD;
-    const int sOriginCol = outBlockCol - FILTER_RAD;
-
-    // Unconditional vectorized fill (float4)
-    {
-        const int vecWidth = 4;                        // 16B per transaction
-        const int sCols4 = S_WIDTH / vecWidth;         // number of float4 per row
-        const int sSize4 = S_HEIGHT * sCols4;          // total float4 vectors in tile
-
-        for (int idx4 = tid; idx4 < sSize4; idx4 += nThreads) {
-            const int r  = idx4 / sCols4;              // shared tile row
-            const int c4 = idx4 % sCols4;              // float4 column index
-            const int inRow = sOriginRow + r;
-            const int inCol = sOriginCol + c4 * vecWidth;
-
-            // Because N is pre-padded and aligned, we can load directly with no checks.
-            const float4* gptr = reinterpret_cast<const float4*>(
-                &N.elements[inRow * N.width + inCol]
-            );
-            float4 v4 = *gptr;
-
-            float4* sptr = reinterpret_cast<float4*>(&N_Sh[r][c4 * vecWidth]);
-            *sptr = v4;
-
-            // Optionally on sm80+:
-            // cp.async.ca.shared.global(&N_Sh[r][c4 * vecWidth], &N.elements[inRow * N.width + inCol], 16);
-        }
-    }
-
-    __syncthreads();
-    // If using cp.async, insert cp.async.commit_group() and cp.async.wait_group(0) before sync (sm80+).
-
-    // Local starting index inside shared memory for this thread's first output
-    const int sx0 = tx * OUTPT + FILTER_RAD;
-    const int sy0 = ty * OUTPT + FILTER_RAD;
-
-    // Compute OUTPT x OUTPT outputs per thread; vectorize stores along x (4-wide)
-    for (int oy = 0; oy < OUTPT; ++oy) {
-        const int outRow = threadOutRow0 + oy;
-        // If P has 2-row/2-col zero padding similar to N, outRow is guaranteed valid
-        // Remove this check if P is padded; otherwise keep:
-        if ((unsigned)outRow >= (unsigned)P.height) continue;
-
-        for (int ox = 0; ox < OUTPT; ox += 4) {
-            const int outCol = threadOutCol0 + ox;
-
-            float acc0 = 0.f, acc1 = 0.f, acc2 = 0.f, acc3 = 0.f;
-            const int py = sy0 + oy;
-            const int px0 = sx0 + ox;
-
-            #pragma unroll
-            for (int ky = -FILTER_RAD; ky <= FILTER_RAD; ++ky) {
-                #pragma unroll
-                for (int kx = -FILTER_RAD; kx <= FILTER_RAD; ++kx) {
-                    const float w  = M_c[ky + FILTER_RAD][kx + FILTER_RAD];
-                    const int sry = py + ky;
-                    const int scx = px0 + kx;
-
-                    const float p0 = N_Sh[sry][scx + 0];
-                    const float p1 = N_Sh[sry][scx + 1];
-                    const float p2 = N_Sh[sry][scx + 2];
-                    const float p3 = N_Sh[sry][scx + 3];
-
-                    acc0 += p0 * w;
-                    acc1 += p1 * w;
-                    acc2 += p2 * w;
-                    acc3 += p3 * w;
-                }
-            }
-
-            // If P has right padding >= 2 and 4-wide store fits, write unconditionally:
-            float4 outv = make_float4(acc0, acc1, acc2, acc3);
-            float4* gptr = reinterpret_cast<float4*>(&P.elements[outRow * P.width + outCol]);
-            *gptr = outv;
-
-            // If P is not padded/aligned, restore a guarded scalar tail for the last block row/col.
-        }
-    }
-}
+// cp.async.ca.shared.global(&N_Sh[r][c4 * vecWidth], &N.elements[inRow * N.width + inCol], 16);
+// cp.async.commit_group() and cp.async.wait_group(0) for sync.

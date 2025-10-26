@@ -26,13 +26,20 @@ typedef struct
     float *elements;
 } Matrix;
 
-// #define FILTER_SIZE 5
-// #define FILTER_RAD (FILTER_SIZE - 1)/2
-// #define TILE_SIZE 16 + 2*FILTER_RAD
-// #define BLOCK_SIZE 16
+#define FILTER_SIZE 5
+#define FILTER_RAD (FILTER_SIZE - 1)/2
+#define TILE_SIZE 16 + 2*FILTER_RAD
+#define BLOCK_SIZE 16
+
+#define OUTPT 4
+#define TILE_OUT_DIM (BLOCK_SIZE * OUTPT)
+#define S_WIDTH (TILE_OUT_DIM + 2*FILTER_RAD)
+#define S_HEIGHT (TILE_OUT_DIM + 2*FILTER_RAD)
+
+using Vec4 = float4;
 
 Matrix allocateMatrix(unsigned height, unsigned width);
-void initMatrix(Matrix mat, bool flag, int originalWidth);
+void initMatrix(Matrix mat);
 Matrix allocateDeviceMatrix(unsigned height, unsigned width);
 Matrix allocateDeviceMatrixPitched(unsigned height, unsigned width);
 cudaArray* allocateDeviceArray(unsigned height, unsigned width);

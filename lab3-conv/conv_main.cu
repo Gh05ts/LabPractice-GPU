@@ -24,7 +24,8 @@ int main(int argc, char *argv[])
     Matrix P_d, N_d; 
     cudaArray *cu;
     cudaTextureObject_t Nt_d;
-    unsigned imageHeight, imageWidth, originalWidth;
+    unsigned imageHeight, imageWidth;
+    // , originalWidth;
     unsigned testRound; // how many rounds to run
     cudaError_t cuda_ret;
     dim3 dim_grid, dim_block;
@@ -58,9 +59,9 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    originalWidth = imageWidth;
-    imageWidth += 256 - imageWidth % 256;
-    imageHeight += 4;
+    // originalWidth = imageWidth;
+    imageWidth += 128 - imageWidth % 128;
+    // imageHeight += 4;
 
     /* Allocate host memory */
     M_h = allocateMatrix(FILTER_SIZE, FILTER_SIZE);
@@ -68,8 +69,8 @@ int main(int argc, char *argv[])
     P_h = allocateMatrix(imageHeight, imageWidth);
 
     /* Initialize filter and images */
-    initMatrix(M_h, true, originalWidth);
-    initMatrix(N_h, false, originalWidth);
+    initMatrix(M_h);
+    initMatrix(N_h);
 
     stopTime(&timer);
     printf("%f s\n", elapsedTime(timer));

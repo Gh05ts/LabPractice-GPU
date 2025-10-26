@@ -29,7 +29,6 @@ void printMatrix(Matrix M) {
 }
 
 cudaTextureObject_t allocateTex(cudaArray *cuArray, Matrix h_input, unsigned height, unsigned width) {
-    // cudaMemcpyToArray(cuArray, 0, 0, h_input.elements, height * width * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy2DToArray(
         cuArray,
         0, 0,
@@ -66,7 +65,6 @@ Matrix allocateMatrix(unsigned height, unsigned width)
     Matrix mat;
     mat.height = height;
     mat.width = mat.pitch = width;
-    // mat.elements = (float *)malloc(height * width * sizeof(float));
     cudaHostAlloc(&mat.elements, height * width * sizeof(float), cudaHostAllocDefault);
     if (mat.elements == NULL)
         FATAL("Unable to allocate host");
@@ -74,37 +72,10 @@ Matrix allocateMatrix(unsigned height, unsigned width)
     return mat;
 }
 
-void initMatrix(Matrix mat, bool flag, int originalWidth)
+void initMatrix(Matrix mat)
 {
     for (unsigned int x = 0; x < mat.height * mat.width; x++) {
-        if(flag) {
-            mat.elements[x] = (rand() % 100) / 100.00;
-        } else {
-            // mat.elements[i] = (rand() % 100) / 100.00;
-            int i = x / mat.width;  // row
-            int j = x % mat.width;  // col
-
-            int val;
-            // top 2 rows or bottom 2 rows
-            if (i < 2 || i >= mat.height - 4 + 2) {
-                if (j < 2 || (j >= originalWidth + 2 && j <= originalWidth + 3)) {
-                    val = 0;   // inside padded frame
-                } else {
-                    val = rand() % 100 / 100.0;  // outside frame → random
-                }
-            }
-            // middle rows (contain real data)
-            else {
-                if (j < 2 || (j >= originalWidth + 2 && j <= originalWidth + 3)) {
-                    val = 0;   // left/right padding
-                } else if (j <= originalWidth + 1) {
-                    val = rand() % 100 / 100.0;  // real data region
-                } else {
-                    val = rand() % 100 / 100.0;  // beyond right padding → random
-                }
-            }
-            mat.elements[x] = val;
-        }
+        mat.elements[x] = (rand() % 100) / 100.00;
     }
 }
 
