@@ -62,9 +62,9 @@ int main(int argc, char *argv[])
         exit(0);
     }
 
-    // padding extra values at the end to allow for better 128 byte (vec4) alignment 
+    // padding extra values at the end to allow for better 128 byte (vec4) alignment 16 x 4 width
     if(!checkTex(imageHeight, imageWidth)) {
-        imageWidth += 128 - imageWidth % 128;
+        imageWidth += 64 - imageWidth % 64;
     }
 
     /* Allocate host memory */

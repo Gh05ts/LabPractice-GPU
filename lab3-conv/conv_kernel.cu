@@ -173,8 +173,13 @@ void convolution_tiled_per_thread_vec(Matrix __restrict__ N, Matrix __restrict__
     const int sSize = S_WIDTH * S_HEIGHT;
 
     for (int idx = tid; idx < sSize; idx += nThreads) {
+
+        // const bool col1 = tid % S_WIDTH == 0; 
+        // const bool coln = tid % 
+
         const int r = idx / S_WIDTH;
         const int c = idx % S_WIDTH;
+
         const int inRow = sOriginRow + r;
         const int inCol = sOriginCol + c;
         float v = 0.0f;
