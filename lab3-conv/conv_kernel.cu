@@ -10,9 +10,6 @@
 
 __constant__ float M_c[FILTER_SIZE][FILTER_SIZE];
 
-// #define WARP_TILE_DIM 8
-// #define WARPS_PER_TILE (TILE_OUT_DIM / WARP_TILE_DIM)
-
 __global__ 
 void convolutionTex(cudaTextureObject_t N, Matrix P) {
     /********************************************************************
