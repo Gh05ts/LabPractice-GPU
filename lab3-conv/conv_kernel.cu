@@ -10,6 +10,9 @@
 
 __constant__ float M_c[FILTER_SIZE][FILTER_SIZE];
 
+// #define WARP_TILE_DIM 8
+// #define WARPS_PER_TILE (TILE_OUT_DIM / WARP_TILE_DIM)
+
 __global__ 
 void convolutionTex(cudaTextureObject_t N, Matrix P) {
     /********************************************************************
@@ -173,10 +176,6 @@ void convolution_tiled_per_thread_vec(Matrix __restrict__ N, Matrix __restrict__
     const int sSize = S_WIDTH * S_HEIGHT;
 
     for (int idx = tid; idx < sSize; idx += nThreads) {
-
-        // const bool col1 = tid % S_WIDTH == 0; 
-        // const bool coln = tid % 
-
         const int r = idx / S_WIDTH;
         const int c = idx % S_WIDTH;
 
@@ -188,7 +187,6 @@ void convolution_tiled_per_thread_vec(Matrix __restrict__ N, Matrix __restrict__
         }
         N_Sh[r][c] = v;
     }
-
     __syncthreads();
 
     const int sx0 = tx * OUTPT + FILTER_RAD;
