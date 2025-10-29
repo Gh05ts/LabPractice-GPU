@@ -7,8 +7,6 @@
  ******************************************************************************/
 
 #include "support.h"
-// #include "cub/cub.cuh"
-#include <stdio.h>
 
 __constant__ float M_c[FILTER_SIZE][FILTER_SIZE];
 

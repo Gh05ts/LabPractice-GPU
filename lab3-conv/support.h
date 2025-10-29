@@ -36,8 +36,6 @@ typedef struct
 #define S_WIDTH (TILE_OUT_DIM + 2*FILTER_RAD)
 #define S_HEIGHT (TILE_OUT_DIM + 2*FILTER_RAD)
 
-#define LOAD_STEPS 2  // split shared tile rows into this many chunks; tuneable
-
 using Vec4 = float4;
 
 Matrix allocateMatrix(unsigned height, unsigned width);
