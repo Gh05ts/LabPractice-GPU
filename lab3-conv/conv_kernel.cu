@@ -7,6 +7,8 @@
  ******************************************************************************/
 
 #include "support.h"
+// #include "cub/cub.cuh"
+#include <stdio.h>
 
 __constant__ float M_c[FILTER_SIZE][FILTER_SIZE];
 
@@ -150,7 +152,7 @@ void convolution_tiled_per_thread(Matrix N, Matrix P) {
 }
 
 __global__
-void convolution_tiled_per_thread_vec(Matrix __restrict__ N, Matrix __restrict__ P) {
+void convolution_tiled_per_thread_vec(const Matrix __restrict__ N, Matrix __restrict__ P) {
     //  __align__(16)
     __shared__ float N_Sh[S_HEIGHT][S_WIDTH];
 

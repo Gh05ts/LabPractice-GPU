@@ -183,8 +183,12 @@ int main(int argc, char *argv[])
     freeMatrix(N_h);
     freeMatrix(P_h);
 
-    cudaDestroyTextureObject(Nt_d);
-    cudaFreeArray(cu);
+    if(checkTex(imageHeight, imageWidth)) {
+        cudaDestroyTextureObject(Nt_d);
+        cudaFreeArray(cu);
+    } else {
+        freeDeviceMatrix(N_d);
+    }
 
     freeDeviceMatrix(P_d);
 
