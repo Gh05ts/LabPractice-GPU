@@ -38,12 +38,33 @@ __global__ void reduction(float *out, float *in, unsigned size) {
     __syncthreads();
 
     // Reduction in shared memory
-    for (unsigned int s = blockDim.x / 2; s > 32; s >>= 1) {
-        if (tid < s) {
-            sdata[tid] += sdata[tid + s];
-        }
-        __syncthreads();
-    }
+    // for (unsigned int s = blockDim.x / 2; s > 32; s >>= 1) {
+    //     if (tid < s) {
+    //         sdata[tid] += sdata[tid + s];
+    //     }
+    //     __syncthreads();
+    // }
+
+    if (tid < 256) { 
+        sdata[tid] += sdata[tid + 256]; 
+    } 
+    __syncthreads(); 
+    // if (blockSize >= 512) {
+    // }
+
+    if (tid < 128) { 
+        sdata[tid] += sdata[tid + 128]; 
+    } 
+    __syncthreads();
+    // if (blockSize >= 256) {
+    // }
+    if (tid < 64) { 
+        sdata[tid] += sdata[tid + 64]; 
+    } 
+    __syncthreads(); 
+    // if (blockSize >= 128) {
+    // }
+
 
     // Write result for this block
     if (tid < 32) warpReduce(sdata, tid);

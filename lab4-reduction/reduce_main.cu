@@ -93,7 +93,7 @@ int main(int argc, char* argv[])
 
     dim_block.x = BLOCK_SIZE; dim_block.y = dim_block.z = 1;
     dim_grid.x = out_elements; dim_grid.y = dim_grid.z = 1;
-    reduction<<<dim_grid, dim_block>>>(out_d, in_d, in_elements);
+    reduction<512><<<dim_grid, dim_block>>>(out_d, in_d, in_elements);
     cuda_ret = cudaDeviceSynchronize();
     if(cuda_ret != cudaSuccess) FATAL("Unable to launch/execute kernel");
 
