@@ -20,7 +20,8 @@ void initVector(float **vec_h, unsigned size)
     }
 
     for (unsigned int i=0; i < size; i++) {
-        (*vec_h)[i] = (rand()%100)/100.00;
+        (*vec_h)[i] = 1.f; 
+        // (rand()%100)/100.00;
     }
 
 }
