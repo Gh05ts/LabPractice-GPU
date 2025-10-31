@@ -194,3 +194,5 @@ int main() {
 
     return 0;
 }
+
+// host$ git rm -r --cached .vscode/
