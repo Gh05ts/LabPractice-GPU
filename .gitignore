@@ -16,7 +16,7 @@ lab2-gemm/.vscode/c_cpp_properties.json
 lab2-gemm/.vscode/launch.json
 lab2-gemm/.vscode/settings.json
 lab3-conv/.vscode/*
-lab4-reduction/.vscod/*
+lab4-reduction/.vscode/*
 *.o
 *.zip
 
