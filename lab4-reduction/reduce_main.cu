@@ -7,13 +7,16 @@
  ******************************************************************************/
 
 #include <stdio.h>
+#include<cub/cub.cuh>
+#include<vector>
 // #include<iostream>
 
 #include "support.h"
 #include "reduce_kernel.cu"
 
-int main(int argc, char* argv[])
+int main2(int argc, char* argv[])
 {
+    int N = 2;
     Timer timer;
 
     // Initialize host variables ----------------------------------------------
@@ -46,8 +49,13 @@ int main(int argc, char* argv[])
 
     initVector(&in_h, in_elements);
 
-    out_elements = in_elements / (BLOCK_SIZE<<1);
-    if(in_elements % (BLOCK_SIZE<<1)) out_elements++;
+    // for kepler-
+    // out_elements = in_elements / (BLOCK_SIZE<<(N+1));
+    // if(in_elements % (BLOCK_SIZE<<(N+1))) out_elements++;
+
+    // for kepler+
+    out_elements = in_elements / BLOCK_SIZE * N;
+    if(out_elements % (BLOCK_SIZE * N)) out_elements++;
 
     out_h = (float*)malloc(out_elements * sizeof(float));
     if(out_h == NULL) FATAL("Unable to allocate host");
@@ -93,7 +101,11 @@ int main(int argc, char* argv[])
 
     dim_block.x = BLOCK_SIZE; dim_block.y = dim_block.z = 1;
     dim_grid.x = out_elements; dim_grid.y = dim_grid.z = 1;
-    reduction<512><<<dim_grid, dim_block>>>(out_d, in_d, in_elements);
+    // for kepler-
+    // reduction<512><<<dim_grid, dim_block>>>(out_d, in_d, in_elements);
+    // for kepler+
+    deviceReduceKernel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
+    // deviceReduceWarpAtomicKernel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
     cuda_ret = cudaDeviceSynchronize();
     if(cuda_ret != cudaSuccess) FATAL("Unable to launch/execute kernel");
 
@@ -137,3 +149,48 @@ int main(int argc, char* argv[])
     return 0;
 }
 
+int main() {
+    Timer timer;
+    // example size and host data
+    const int N = 1 << 22; // 1M elements
+    std::vector<float> h_in(N);
+    for (int i = 0; i < N; ++i) h_in[i] = 1.0f; // sum should be N
+
+    // device buffers
+    float *d_in = nullptr;
+    float *d_out = nullptr;
+    cudaMalloc(&d_in, N * sizeof(float));
+    cudaMalloc(&d_out, sizeof(float));
+
+    // copy input to device
+    cudaMemcpy(d_in, h_in.data(), N * sizeof(float), cudaMemcpyHostToDevice);
+
+    // determine temporary device storage for CUB
+    void* d_temp_storage = nullptr;
+    size_t temp_storage_bytes = 0;
+
+    // dry run to get required temp storage size
+    cub::DeviceReduce::Sum(d_temp_storage, temp_storage_bytes, d_in, d_out, N);
+    // allocate temp storage
+    cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
+    // run reduction
+    startTime(&timer);
+    cub::DeviceReduce::Sum(d_temp_storage, temp_storage_bytes, d_in, d_out, N);
+    cudaDeviceSynchronize();
+    stopTime(&timer);
+    printf("%f s\n", elapsedTime(timer));
+
+    // copy result back to host
+    float h_out = 0.0f;
+    cudaMemcpy(&h_out, d_out, sizeof(float), cudaMemcpyDeviceToHost);
+
+    printf("reduction result = %f (expected %d)\n", h_out, N);
+
+    // cleanup
+    cudaFree(d_temp_storage);
+    cudaFree(d_in);
+    cudaFree(d_out);
+
+    return 0;
+}
