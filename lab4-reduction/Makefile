@@ -1,7 +1,7 @@
 
 NVCC        = nvcc
-NVCC_FLAGS  = -O3 -I/usr/local/cuda/include
-LD_FLAGS    = -lcudart -L/usr/local/cuda/lib64
+NVCC_FLAGS  = -O3 -lineinfo -arch=sm_75 -Xptxas="-v" -I/usr/local/cuda/include
+LD_FLAGS    = -lcudart -arch=sm_75 -lineinfo -Xptxas="-v" -L/usr/local/cuda/lib64
 EXE	        = reduction
 OBJ	        = reduce_main.o support.o
 

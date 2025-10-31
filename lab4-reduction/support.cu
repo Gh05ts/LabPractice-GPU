@@ -13,7 +13,8 @@
 
 void initVector(float **vec_h, unsigned size)
 {
-    *vec_h = (float*)malloc(size*sizeof(float));
+    // *vec_h = (float*)malloc(size*sizeof(float));
+    cudaHostAlloc(vec_h, size * sizeof(float), cudaHostAllocDefault);
 
     if(*vec_h == NULL) {
         FATAL("Unable to allocate host");

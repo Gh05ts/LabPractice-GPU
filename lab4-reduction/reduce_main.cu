@@ -14,9 +14,9 @@
 #include "support.h"
 #include "reduce_kernel.cu"
 
-int main2(int argc, char* argv[])
+int main(int argc, char* argv[])
 {
-    int N = 2;
+    int N = 8;
     Timer timer;
 
     // Initialize host variables ----------------------------------------------
@@ -56,8 +56,10 @@ int main2(int argc, char* argv[])
     // for kepler+
     out_elements = in_elements / BLOCK_SIZE * N;
     if(out_elements % (BLOCK_SIZE * N)) out_elements++;
+    // out_elements = 1;
 
-    out_h = (float*)malloc(out_elements * sizeof(float));
+    // out_h = (float*)malloc(out_elements * sizeof(float));
+    cudaHostAlloc(&out_h, out_elements * sizeof(float), cudaHostAllocDefault);
     if(out_h == NULL) FATAL("Unable to allocate host");
 
     stopTime(&timer); 
@@ -105,6 +107,7 @@ int main2(int argc, char* argv[])
     // reduction<512><<<dim_grid, dim_block>>>(out_d, in_d, in_elements);
     // for kepler+
     deviceReduceKernel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
+    // run_coop_reduce(in_d, out_d, in_elements);
     // deviceReduceWarpAtomicKernel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
     cuda_ret = cudaDeviceSynchronize();
     if(cuda_ret != cudaSuccess) FATAL("Unable to launch/execute kernel");
@@ -143,13 +146,17 @@ int main2(int argc, char* argv[])
 
     cudaFree(in_d);
     cudaFree(out_d);
-    free(in_h);
-    free(out_h);
+    
+    cudaFree(in_h);
+    cudaFree(out_h);
+
+    // free(in_h);
+    // free(out_h);
 
     return 0;
 }
 
-int main() {
+int main2() {
     Timer timer;
     // example size and host data
     const int N = 1 << 22; // 1M elements
