@@ -6,11 +6,12 @@
  *cr
  ******************************************************************************/
 
-#define BLOCK_SIZE 256
+#define BLOCK_SIZE 1024
 #define SIMPLE
 #include <cooperative_groups.h>
 // #define N 2
 // #define OUTPUTS 1u<<N
+# define WARP_SIZE 32
 
 namespace cg = cooperative_groups;
 
@@ -90,7 +91,7 @@ __global__ void reduction(float *out, float *in, unsigned size) {
 __inline __device__
 float warpReduceSum(float val) {
     unsigned mask = __activemask();
-    for (int offset = warpSize / 2; offset > 0; offset /= 2) {
+    for (int offset = WARP_SIZE / 2; offset > 0; offset /= 2) {
         val += __shfl_down_sync(mask, val, offset);
     }
     return val;
@@ -99,12 +100,12 @@ float warpReduceSum(float val) {
 __inline__ __device__
 float blockReduceSum(float val) {
     static __shared__ float shared[32];
-    int lane = threadIdx.x % warpSize;
-    int wid = threadIdx.x / warpSize;
+    int lane = threadIdx.x % WARP_SIZE;
+    int wid = threadIdx.x / WARP_SIZE;
     val = warpReduceSum(val);
     if (lane == 0) shared[wid] = val;
     __syncthreads();
-    val = (threadIdx.x < blockDim.x / warpSize) ? shared[lane]: 0;
+    val = (threadIdx.x < blockDim.x / WARP_SIZE) ? shared[lane]: 0;
     if(wid == 0) val = warpReduceSum(val);
     return val;
 }
@@ -113,8 +114,11 @@ __global__
 void deviceReduceKernel(float* in, float* out, int size) {
     float sum = 0.f;
     // #pragma unroll
-    for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
-        sum += in[i];
+    for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < size / 4; i += blockDim.x * gridDim.x) {
+        // sum += in[i];
+        float4 inp = ((float4*)in)[i];
+        // float4 elem = reinterpret_cast<float4*>(&in[i]);
+        sum += inp.x + inp.y + inp.z + inp.w;
     }
     sum = blockReduceSum(sum);
     if(threadIdx.x == 0)
@@ -124,11 +128,18 @@ void deviceReduceKernel(float* in, float* out, int size) {
 __global__
 void deviceReduceWarpAtomicKernel(float* in, float* out, int size) {
     float sum = 0.f;
-    for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
-        sum += in[i];
+    // for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < size; i += blockDim.x * gridDim.x) {
+    //     sum += in[i];
+    // }
+    for(int i = blockIdx.x * blockDim.x + threadIdx.x; i < size / 4; i += blockDim.x * gridDim.x) {
+        // sum += in[i];
+        float4 inp = ((float4*)in)[i];
+        // float4 elem = reinterpret_cast<float4*>(&in[i]);
+        sum += inp.x + inp.y + inp.z + inp.w;
     }
     sum = warpReduceSum(sum);
-    if ((threadIdx.x & (warpSize - 1)) == 0)
+    // sum = blockReduceSum(sum);
+    if ((threadIdx.x & (warpSize - 1)) == 0) // & (warpSize - 1)
         atomicAdd(out, sum);
 }
 
@@ -254,33 +265,33 @@ bool run_coop_reduce(const float *d_in, float *d_out, int N,
     return true;
 }
 
-__device__ float thread_sum(float *input, int n) {
-    float sum = 0.f;
+// __device__ float thread_sum(float *input, int n) {
+//     float sum = 0.f;
 
-    for(int i = blockIdx.x * blockDim.x + threadIdx.x;
-        i < n / 4; 
-        i += blockDim.x * gridDim.x)
-    {
-        float4 in = ((float4*)input)[i];
-        sum += in.x + in.y + in.z + in.w;
-    }
-    return sum;
-}
+//     for(int i = blockIdx.x * blockDim.x + threadIdx.x;
+//         i < n / 4; 
+//         i += blockDim.x * gridDim.x)
+//     {
+//         float4 in = ((float4*)input)[i];
+//         sum += in.x + in.y + in.z + in.w;
+//     }
+//     return sum;
+// }
 
-template<int tile_sz>
-__device__ float reduce_sum_tile_shfl(thread_block_tile<tile_sz> g, float val) {
-    for (int i = g.size() / 2; i > 0; i /= 2) {
-        val += g.shfl_down(val, i);
-    }
-    return val;
-}
+// template<int tile_sz>
+// __device__ float reduce_sum_tile_shfl(thread_block_tile<tile_sz> g, float val) {
+//     for (int i = g.size() / 2; i > 0; i /= 2) {
+//         val += g.shfl_down(val, i);
+//     }
+//     return val;
+// }
 
-template<int tile_sz>
-__global__ void sum_kernel_tile_shfl(float *sum, float *input, int n) {
-    float my_sum = thread_sum(input, n);
+// template<int tile_sz>
+// __global__ void sum_kernel_tile_shfl(float* sum, float* input, int n) {
+//     float my_sum = thread_sum(input, n);
 
-    auto tile = tiled_partition<tile_sz>(this_thread_block());
-    float tile_sum = reduce_sum_tile_shfl<tile_sz>(tile, my_sum);
+//     auto tile = tiled_partition<tile_sz>(this_thread_block());
+//     float tile_sum = reduce_sum_tile_shfl<tile_sz>(tile, my_sum);
 
-    if (tile.thread_rank() == 0) atomicAdd(sum, tile_sum);
-}
+//     if (tile.thread_rank() == 0) atomicAdd(sum, tile_sum);
+// }

@@ -16,7 +16,7 @@
 
 int main(int argc, char* argv[])
 {
-    int N = 8;
+    int N = 4;
     Timer timer;
 
     // Initialize host variables ----------------------------------------------
@@ -34,7 +34,8 @@ int main(int argc, char* argv[])
 
     // Allocate and initialize host memory
     if(argc == 1) {
-        in_elements = 1000000;
+        in_elements = 1 << 22; 
+        // 1000000;
     } else if(argc == 2) {
         in_elements = atoi(argv[1]);
     } else {
@@ -106,9 +107,13 @@ int main(int argc, char* argv[])
     // for kepler-
     // reduction<512><<<dim_grid, dim_block>>>(out_d, in_d, in_elements);
     // for kepler+
-    deviceReduceKernel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
+    // deviceReduceKe/rnel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
+    deviceReduceWarpAtomicKernel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
+    // int blockSize = 256;
+    // int nBlocks = (in_elements + blockSize - 1) / blockSize;
+    // int sharedBytes = blockSize * sizeof(int);
+    // sum_kernel_tile_shfl<><<<nBlocks, blockSize, sharedBytes>>>(out_d, in_d, in_elements);
     // run_coop_reduce(in_d, out_d, in_elements);
-    // deviceReduceWarpAtomicKernel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
     cuda_ret = cudaDeviceSynchronize();
     if(cuda_ret != cudaSuccess) FATAL("Unable to launch/execute kernel");
 
