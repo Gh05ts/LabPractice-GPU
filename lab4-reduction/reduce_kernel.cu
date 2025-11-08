@@ -295,3 +295,116 @@ bool run_coop_reduce(const float *d_in, float *d_out, int N,
 
 //     if (tile.thread_rank() == 0) atomicAdd(sum, tile_sum);
 // }
+
+
+template <unsigned int blockSize>
+__device__ void warpReduce(volatile float *sdata, unsigned int tid)
+{
+    if (blockSize >= 64)
+        sdata[tid] += sdata[tid + 32];
+    if (blockSize >= 32)
+        sdata[tid] += sdata[tid + 16];
+    if (blockSize >= 16)
+        sdata[tid] += sdata[tid + 8];
+    if (blockSize >= 8)
+        sdata[tid] += sdata[tid + 4];
+    if (blockSize >= 4)
+        sdata[tid] += sdata[tid + 2];
+    if (blockSize >= 2)
+        sdata[tid] += sdata[tid + 1];
+}
+
+template <unsigned int blockSize>
+__global__ void reduce6(float *g_idata, float *g_odata, unsigned int n)
+{
+    extern __shared__ float sdata[];
+    unsigned int tid = threadIdx.x;
+    unsigned int i = blockIdx.x * (blockSize * 2) + tid;
+    unsigned int gridSize = blockSize * 2 * gridDim.x;
+    sdata[tid] = 0;
+    while (i < n)
+    {
+        sdata[tid] += g_idata[i] + g_idata[i + blockSize];
+        i += gridSize;
+    }
+    __syncthreads();
+    if (blockSize >= 512)
+    {
+        if (tid < 256)
+        {
+            sdata[tid] += sdata[tid + 256];
+        }
+        __syncthreads();
+    }
+    if (blockSize >= 256)
+    {
+        if (tid < 128)
+        {
+            sdata[tid] += sdata[tid + 128];
+        }
+        __syncthreads();
+    }
+    if (blockSize >= 128)
+    {
+        if (tid < 64)
+        {
+            sdata[tid] += sdata[tid + 64];
+        }
+        __syncthreads();
+    }
+    if (tid < 32)
+        warpReduce<blockSize>(sdata, tid);
+    if (tid == 0)
+        g_odata[blockIdx.x] = sdata[0];
+}
+
+template <size_t NUM_WARPS>
+__device__ float shared_data_reduce_sum_v2(float shared_data[NUM_WARPS]) {
+    float sum = 0.f;
+    #pragma unroll
+    for(size_t i = 0; i < NUM_WARPS; ++i) {
+        sum += shared_data[i];
+    }
+    return sum;
+}
+
+__device__ float warp_reduce_sum(float val) {
+    constexpr unsigned int FULL_MASK = 0xffffffff;
+    #pragma unroll
+    for(size_t offset =16; offset > 0; offset /= 2) {
+        val += __shfl_down_sync(FULL_MASK, val, offset);
+    }
+    return val;
+}
+
+template <size_t NUM_THREADS, size_t NUM_WARPS = NUM_THREADS / WARP_SIZE>
+__device__ float block_reduce_v2(float const* __restrict__ input_data, float shared_data[NUM_WARPS], size_t num_elements) {
+    size_t const num_elem_per_thread = (num_elements * NUM_THREADS - 1) / NUM_THREADS;
+    size_t const tid = threadIdx.x;
+    float sum = 0.f;
+    for(size_t i = 0; i < num_elem_per_thread; ++i) {
+        size_t const offset = tid + i * NUM_THREADS;
+        if(offset < num_elements) {
+            sum += input_data[offset];
+        }
+    }
+    sum = warp_reduce_sum(sum);
+    if(tid % 32 == 0) {
+        shared_data[tid / 32] = sum;
+    }
+    __syncthreads();
+    float const block_sum = shared_data_reduce_sum_v2<NUM_WARPS>(shared_data);
+    return block_sum;
+}
+
+template<size_t NUM_THREADS>
+__global__ void batched_reduce_sum_v2(float* __restrict__ output_data, float const* __restrict__ input_data, size_t num_elements_per_batch) {
+    constexpr size_t NUM_WARPS = NUM_THREADS / WARP_SIZE;
+    size_t const bid = blockIdx.x;
+    size_t const tid = threadIdx.x;
+    __shared__ float shared_data[NUM_WARPS];
+    float const block_sum = block_reduce_v2<NUM_THREADS, NUM_WARPS>(input_data + bid * num_elements_per_batch, shared_data, num_elements_per_batch);
+    if(tid == 0) {
+        output_data[bid] = block_sum;
+    }
+}

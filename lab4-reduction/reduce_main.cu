@@ -31,6 +31,7 @@ int main(int argc, char* argv[])
     cudaError_t cuda_ret;
     dim3 dim_grid, dim_block;
     int i;
+    bool flag = false;
 
     // Allocate and initialize host memory
     if(argc == 1) {
@@ -38,6 +39,8 @@ int main(int argc, char* argv[])
         // 1000000;
     } else if(argc == 2) {
         in_elements = atoi(argv[1]);
+        flag = true;
+
     } else {
         printf("\n    Invalid input parameters!"
            "\n    Usage: ./reduction          # Input of size 1,000,000 is used"
@@ -48,6 +51,14 @@ int main(int argc, char* argv[])
 
     // in_elements += in_elements % 32;
 
+    // int32_t devId = 0;
+    // int32_t n_sm;
+    // cudaDeviceGetAttribute(&n_sm, cudaDevAttrMultiProcessorCount, devId);
+
+    // uint32_t grid_size = 32 * n_sm;
+    // const uint32_t block_size = 256;
+    // const uint32_t shared_memory = (block_size / WARP_SIZE) * sizeof(float);
+
     initVector(&in_h, in_elements);
 
     // for kepler-
@@ -55,8 +66,15 @@ int main(int argc, char* argv[])
     // if(in_elements % (BLOCK_SIZE<<(N+1))) out_elements++;
 
     // for kepler+
-    out_elements = in_elements / BLOCK_SIZE * N;
-    if(out_elements % (BLOCK_SIZE * N)) out_elements++;
+    size_t const grid_size = 2048;
+    size_t const num_element_per_block = in_elements / grid_size;
+    constexpr size_t block_size = 256;
+    if(!flag) {
+        out_elements = in_elements / BLOCK_SIZE * N;
+        if(out_elements % (BLOCK_SIZE * N)) out_elements++;
+    } else {
+        out_elements = grid_size;
+    }
     // out_elements = 1;
 
     // out_h = (float*)malloc(out_elements * sizeof(float));
@@ -107,8 +125,13 @@ int main(int argc, char* argv[])
     // for kepler-
     // reduction<512><<<dim_grid, dim_block>>>(out_d, in_d, in_elements);
     // for kepler+
-    // deviceReduceKe/rnel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
-    deviceReduceWarpAtomicKernel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
+    if(!flag) {
+        deviceReduceKernel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
+    } else {
+        batched_reduce_sum_v2<block_size><<<grid_size, block_size>>>(out_d, in_d, num_element_per_block);
+    }
+    // deviceReduceWarpAtomicKernel<<<dim_grid, dim_block>>>(in_d, out_d, in_elements);
+    // reduce6<block_size><<<grid_size, block_size, shared_memory>>>(in_d, out_d, in_elements);
     // int blockSize = 256;
     // int nBlocks = (in_elements + blockSize - 1) / blockSize;
     // int sharedBytes = blockSize * sizeof(int);

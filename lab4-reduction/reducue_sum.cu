@@ -306,7 +306,7 @@ float profile_batched_reduce_sum(
 int main()
 {
     size_t const batch_size{2048};
-    size_t const num_elements_per_batch{1024 * 256};
+    size_t const num_elements_per_batch{1 << 11}; // 
 
     constexpr size_t string_width{50U};
     std::cout << std_string_centered("", string_width, '~') << std::endl;
