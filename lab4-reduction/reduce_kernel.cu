@@ -408,3 +408,63 @@ __global__ void batched_reduce_sum_v2(float* __restrict__ output_data, float con
         output_data[bid] = block_sum;
     }
 }
+
+__device__ __forceinline__ float warp_reduce_sum_v2(float v) {
+    constexpr unsigned int FULL_MASK = 0xffffffff;
+    #pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        v += __shfl_down_sync(FULL_MASK, v, offset);
+    }
+    return v;
+}
+
+template <unsigned NUM_THREADS>
+__device__ __forceinline__ float block_reduce_sum_v2(float local, float shared[]) {
+    const unsigned tid = threadIdx.x;
+    const unsigned lane = tid & (WARP_SIZE - 1);
+    const unsigned warpid = tid >> 5;
+    // reduce within warp
+    float warp_sum = warp_reduce_sum(local);
+    // write warp sums to shared memory (one per warp)
+    if (lane == 0) shared[warpid] = warp_sum;
+    __syncthreads();
+    // let first warp reduce warp sums
+    float block_sum = 0.f;
+    if (warpid == 0) {
+        float s = (tid < (NUM_THREADS / WARP_SIZE)) ? shared[lane] : 0.f;
+        s = warp_reduce_sum_v2(s);
+        if (tid == 0) block_sum = s;
+    }
+    // broadcast block_sum from thread 0 of block if needed by caller
+    return block_sum;
+}
+
+template <unsigned NUM_THREADS>
+__global__ void vectorized_reduce_stage1(float* __restrict__ out_partial,
+                                         const float* __restrict__ in,
+                                         size_t N /* multiple of 4 */) {
+    // Preconditions: in is 16-byte aligned, N % 4 == 0
+    constexpr unsigned NUM_WARPS = NUM_THREADS / WARP_SIZE;
+    __shared__ float shared[NUM_WARPS];
+
+    const unsigned tid = threadIdx.x;
+    const unsigned block_threads = blockDim.x;
+    const unsigned grid_threads = blockDim.x * gridDim.x;
+    const unsigned global_tid = blockIdx.x * block_threads + tid;
+
+    using Vec4 = float4;
+    const Vec4* vec_in = reinterpret_cast<const Vec4*>(in); // safe if aligned
+    const size_t vecN = N / 4; // number of float4 vectors
+
+    float local_sum = 0.0f;
+
+    // iterate over vector elements (each represents 4 floats)
+    for (size_t v = global_tid; v < vecN; v += grid_threads) {
+        Vec4 x = vec_in[v];
+        local_sum += x.x + x.y + x.z + x.w;
+    }
+
+    // block reduce the local_sum; only thread 0 gets the final block sum
+    float block_res = block_reduce_sum_v2<NUM_THREADS>(local_sum, shared);
+    if (tid == 0) out_partial[blockIdx.x] = block_res;
+}

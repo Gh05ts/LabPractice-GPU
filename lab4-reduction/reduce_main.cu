@@ -66,7 +66,7 @@ int main(int argc, char* argv[])
     // if(in_elements % (BLOCK_SIZE<<(N+1))) out_elements++;
 
     // for kepler+
-    size_t const grid_size = 2048;
+    size_t const grid_size = 320;
     size_t const num_element_per_block = in_elements / grid_size;
     constexpr size_t block_size = 256;
     if(!flag) {
