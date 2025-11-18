@@ -35,7 +35,8 @@ int main(int argc, char* argv[])
 
     // Allocate and initialize host memory
     if(argc == 1) {
-        in_elements = 1 << 22; 
+        in_elements = 1000000;
+        // 1 << 11;
         // 1000000;
     } else if(argc == 2) {
         in_elements = atoi(argv[1]);
@@ -49,7 +50,7 @@ int main(int argc, char* argv[])
         exit(0);
     }
 
-    // in_elements += in_elements % 32;
+    // in_elements += in_elements % 4;
 
     // int32_t devId = 0;
     // int32_t n_sm;

@@ -379,13 +379,16 @@ __device__ float warp_reduce_sum(float val) {
 
 template <size_t NUM_THREADS, size_t NUM_WARPS = NUM_THREADS / WARP_SIZE>
 __device__ float block_reduce_v2(float const* __restrict__ input_data, float shared_data[NUM_WARPS], size_t num_elements) {
-    size_t const num_elem_per_thread = (num_elements * NUM_THREADS - 1) / NUM_THREADS;
+    size_t const num_elem_per_thread = (num_elements / 4 * NUM_THREADS - 1) / NUM_THREADS;
     size_t const tid = threadIdx.x;
     float sum = 0.f;
     for(size_t i = 0; i < num_elem_per_thread; ++i) {
         size_t const offset = tid + i * NUM_THREADS;
         if(offset < num_elements) {
-            sum += input_data[offset];
+            float4 elem = reinterpret_cast<const float4*>(input_data)[offset];
+            // input_data[offset];
+            sum += elem.w + elem.x + elem.y + elem.z;
+            // input_data[offset];
         }
     }
     sum = warp_reduce_sum(sum);
