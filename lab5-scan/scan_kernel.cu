@@ -6,182 +6,237 @@
  *cr
  ******************************************************************************/
 
-#define BLOCK_SIZE 512
-
-// util
-#define LANE_COUNT 32
-#define LANE_MASK 31
-#define LOG_LANE 5
-#define WARP_IDX (threadIdx.x >> LOG_LANE)
-#define FULL_MASK 0xffffffff
-
-#define ONGOING 0
-#define PARTIAL 1
-#define FULL 2
-#define FLAG_MASK 3
-
-#define N_WARPS 8
-#define FLOAT4_PER_THREAD 4
-
-__device__ __forceinline__ u_int32_t getLaneID() {
-    u_int32_t laneID;
-    asm("mov.u32 %0, %%laneid;" : "=r"(laneID));
-    return laneID;
-}
-
-__device__ __forceinline__ float inclusiveWarpScan(float val) {
-    #pragma unroll
-    for(int i = 1; i <= 16; i <<= 1) {
-        const float sum = __shfl_up_sync(FULL_MASK, val, i, LANE_COUNT);
-        if(getLaneID() >= i) {
-            val += sum;
-        }
-    }
-
-    return val;
-}
-
-__device__ __forceinline__ float inclusiveWarpScanCircular(float val) {
-    #pragma unroll
-    for(int i = 1; i <= 16; i <<= 1) {
-        const float sum = __shfl_up_sync(FULL_MASK, val, i, LANE_COUNT);
-        if(getLaneID() >= i) {
-            val += sum;
-        }
-    }
-
-    return __shfl_sync(FULL_MASK, val, getLaneID() + LANE_MASK); // LANE_MASK & LANE_MASK
-}
-
-__device__ __forceinline__ float warpReduceSum(float val) {
-    #pragma unroll
-    for(int mask = 16; mask; mask >>= 1) {
-        val += __shfl_xor_sync(FULL_MASK, val, mask, LANE_COUNT);
-    }
-
-    return val;
-}
-
-__device__ __forceinline__ float4 setXAndAddYZW(float add, float4 val) {
-    return make_float4(add, val.y + add, val.z + add, val.w + add);
-}
-
-__device__ __forceinline__ float4 addFloatToVec4(float add, float4 val) {
-    return make_float4(val.x + add, val.y + add, val.z + add, val.w + add);
-}
-
-__device__ __forceinline__ float reduceFloat4(float4 val) {
-    return val.x + val.y + val.z + val.w;
-}
-
-template <u_int32_t PER_THREAD>
-__device__ __forceinline__ void scanInclusiveFinal(float4* totalScan, float* scan, float* s_warpReduction, const u_int32_t offset) {
-    float warpReduction = 0.f;
-    #pragma unroll
-    for(u_int32_t i = getLaneID() + offset, j = 0; j < PER_THREAD; i += LANE_COUNT, ++j) {
-        totalScan[j] = reinterpret_cast<float4*>(scan)[i];
-        totalScan[j].y += totalScan[j].x;
-        totalScan[j].z += totalScan[j].y;
-        totalScan[j].w += totalScan[j].z;
-
-        const float sum = inclusiveWarpScanCircular(totalScan[j].w);
-        totalScan[j] = addFloatToVec4((getLaneID() ? sum: 0) + warpReduction, totalScan[j]);
-        warpReduction += __shfl_sync(FULL_MASK, sum, 0);
-     }
-
-     if(!getLaneID()) {
-        s_warpReduction[WARP_IDX] = warpReduction;
-     }
-}
-
-template <u_int32_t PER_THREAD>
-__device__ __forceinline__ void scanInclusivePartial(float4* totalScan, float* s_warpReduction, const u_int32_t offset, const u_int32_t vecSize) {
-    float warpReduction = 0.f;
-    #pragma unroll
-    for(u_int32_t i = getLaneID() + offset, j = 0; j < PER_THREAD, i += LANE_COUNT, ++j) {
-        totalScan[j] = i < vecSize? reinterpret_cast<float4*>(scan)[i]: make_float4(0.f, 0.f, 0.f, 0.f);
-        totalScan[j].y += totalScan[j].x;
-        totalScan[j].z += totalScan[j].y;
-        totalScan[j].w += totalScan[j].z;
-
-        const float sum = inclusiveWarpScanCircular(totalScan[j].w);
-        totalScan[j] = addFloatToVec4((getLaneID() ? sum: 0) + warpReduction, totalScan[j]);
-        warpReduction += __shfl_sync(FULL_MASK, sum, 0);
-    }
-
-     if(!getLaneID()) {
-        s_warpReduction[WARP_IDX] = warpReduction;
-     }
-}
-
-template <u_int32_t PER_THREAD>
-__device__ __forceinline__ void PropagateFull(float4* tScan, float* scan, const float prevReduction, const u_int32_t offset) {
-    #pragma unroll
-    for (uint32_t i = getLaneId() + offset, j = 0; j < PER_THREAD; i += LANE_COUNT, ++j) {
-        reinterpret_cast<float4*>(scan)[i] = addFloatToVec4(prevReduction, tScan[j]);
-    }
-}
-
-template <u_int32_t PER_THREAD>
-__device__ __forceinline__ void PropagatePartial(float4* tScan, float* scan, const float prevReduction, const u_int32_t offset, const u_int32_t vecSize) {
-    #pragma unroll
-    for (uint32_t i = getLaneId() + offset, j = 0; j < PER_THREAD; i += LANE_COUNT, ++j) {
-        if (i < vecSize) {
-            reinterpret_cast<float4*>(scan)[i] = addFloatToVec4(prevReduction, tScan[j]);
-        }
-    }
-}
-
-__device__ __forceinline__ void lookback(const u_int32_t partIdx, float localReduction, float & s_broadcast, volatile float* blockReduction) {
-        float prevReduction = 0.f;
-        u_int32_t lookbackIndex = partIdx - 1;
-        while (true) {
-            const float flagPayload = blockReduction[lookbackIndex];
-            if ((flagPayload & FLAG_MASK) > ONGOING) {
-                prevReduction += flagPayload >> 2;
-                if ((flagPayload & FLAG_MASK) == FLAG_INCLUSIVE) {
-                    s_broadcast = prevReduction;
-                    atomicExch((uint32_t*)&threadBlockReduction[partIndex],
-                               FLAG_INCLUSIVE | prevReduction + localReduction << 2);
-                    break;
-                } else {
-                    lookbackIndex--;
-                }
-            }
-        }
-}
+#define BLOCK_SIZE 1024
 
 // Define your kernels in this file you may use more than one kernel if you
 // need to
 
 // INSERT KERNEL(S) HERE
-__global__
-void preScanKernel(float *out, float *in, unsigned in_size) {
-    extern __shared__ float temp[];
-    int thid = threadIdx.x;
-    int pout = 0, pin = 1;
-    temp[pout * in_size + thid] = (thid > 0)? in[thid - 1]: 0;
-    __syncthreads();
-    for(int offset = 1; offset < in_size; offset += 2) {
-        pout = 1 - pout;
-        pin = 1 - pout;
-        if(thid >= offset) {
-            temp[pout * in_size + thid] += temp[pin * in_size + thid - offset];
-        } else {
-            temp[pout * in_size + thid] = temp[pin * in_size + thid];
-        }
-        __syncthreads();
-    }
-    out[thid] = temp[pout * in_size + thid];
+
+__device__ __forceinline__ float identity() { return 0.0f; }
+
+// Warp-level inclusive scan
+__device__ __forceinline__ float warp_inclusive_scan(float val, unsigned mask = 0xFFFFFFFFu)
+{
+  const int lane = threadIdx.x & 31;
+  for (int offset = 1; offset < 32; offset <<= 1) {
+    float n = __shfl_up_sync(mask, val, offset);
+    if (lane >= offset) val += n;
+  }
+  return val;
 }
 
+// Block-level inclusive scan (one value per thread)
+__device__ float block_inclusive_scan(float val, float* block_total_out)
+{
+  __shared__ float warp_totals[BLOCK_SIZE / 32];
+
+  const int lane = threadIdx.x & 31;
+  const int warp = threadIdx.x >> 5;
+
+  float scanned = warp_inclusive_scan(val);
+
+  if (lane == 31) warp_totals[warp] = scanned;
+  __syncthreads();
+
+  if (warp == 0) {
+    float wt = (lane < (BLOCK_SIZE / 32)) ? warp_totals[lane] : identity();
+    float wt_scanned = warp_inclusive_scan(wt);
+    if (lane < (BLOCK_SIZE / 32)) warp_totals[lane] = wt_scanned;
+  }
+  __syncthreads();
+
+  float warp_offset = (warp > 0) ? warp_totals[warp - 1] : identity();
+  scanned += warp_offset;
+
+  if (block_total_out && threadIdx.x == BLOCK_SIZE - 1) {
+    *block_total_out = scanned; // total of this block
+  }
+  return scanned;
+}
+
+// Kernel A: per-block scan, write exclusive per-element results and block totals
+__global__ void scan_blocks_kernel_exclusive(const float* __restrict__ d_in,
+                                             float* __restrict__ d_out,
+                                             float* __restrict__ d_block_totals,
+                                             int N)
+{
+  const int gid = blockIdx.x * blockDim.x + threadIdx.x;
+  const bool in_range = (gid < N);
+  float val = in_range ? d_in[gid] : identity();
+
+  __shared__ float block_total;
+  float inclusive = block_inclusive_scan(val, &block_total);
+
+  if (in_range) {
+    // exclusive = inclusive - input
+    d_out[gid] = inclusive - val;
+  }
+
+  if (threadIdx.x == BLOCK_SIZE - 1) {
+    d_block_totals[blockIdx.x] = block_total;
+  }
+}
+
+// Kernel B: add scanned block offsets (exclusive) to make global exclusive
+__global__ void add_block_offsets_kernel_exclusive(float* __restrict__ d_out,
+                                                   const float* __restrict__ d_block_totals_scanned_excl,
+                                                   int N)
+{
+  const int gid = blockIdx.x * blockDim.x + threadIdx.x;
+  if (gid >= N) return;
+
+  // For exclusive scan, offset for block b is exclusive_scan(block_totals)[b]
+  float offset = d_block_totals_scanned_excl[blockIdx.x];
+  d_out[gid] += offset;
+}
+
+// Recursive helper: exclusive-scan an array of length M (device arrays)
+void exclusive_scan_recursive(float* d_out, const float* d_in, int M)
+{
+  if (M <= 0) return;
+
+  const int blockSize = BLOCK_SIZE;
+  const int numBlocks = (M + blockSize - 1) / blockSize;
+
+  // Single-block fast path
+  if (numBlocks == 1) {
+    float* d_dummy = nullptr;
+    cudaMalloc(&d_dummy, sizeof(float));
+    scan_blocks_kernel_exclusive<<<1, blockSize>>>(d_in, d_out, d_dummy, M);
+    cudaFree(d_dummy);
+    return;
+  }
+
+  // General hierarchical path
+  float* d_level_out = nullptr;            // per-element exclusive results at this level
+  float* d_block_totals = nullptr;         // per-block totals (inclusive sum of each block)
+  float* d_block_totals_scanned_excl = nullptr; // exclusive scan of block totals
+
+  cudaMalloc(&d_level_out, sizeof(float) * M);
+  cudaMalloc(&d_block_totals, sizeof(float) * numBlocks);
+  cudaMalloc(&d_block_totals_scanned_excl, sizeof(float) * numBlocks);
+
+  // Pass 1: per-block exclusive results + collect block totals
+  scan_blocks_kernel_exclusive<<<numBlocks, blockSize>>>(d_in, d_level_out, d_block_totals, M);
+
+  // Pass 2: exclusive scan of block totals
+  // We can reuse the same routine recursively: out = exclusive_scan(d_block_totals)
+  exclusive_scan_recursive(d_block_totals_scanned_excl, d_block_totals, numBlocks);
+
+  // Pass 3: add offsets to each block's elements
+  add_block_offsets_kernel_exclusive<<<numBlocks, blockSize>>>(d_level_out, d_block_totals_scanned_excl, M);
+
+  // Copy level result to output
+  cudaMemcpy(d_out, d_level_out, sizeof(float) * M, cudaMemcpyDeviceToDevice);
+
+  cudaFree(d_level_out);
+  cudaFree(d_block_totals);
+  cudaFree(d_block_totals_scanned_excl);
+}
 
 /******************************************************************************
 Setup and invoke your kernel(s) in this function. You may also allocate more
 GPU memory if you need to
 *******************************************************************************/
-void preScan(float *out, float *in, unsigned in_size) {
-    int grid_size = in_size + (BLOCK_SIZE - 1) / BLOCK_SIZE;
-    preScanKernel<<<BLOCK_SIZE, grid_size, BLOCK_SIZE>>>(out, in, in_size);
+void preScan(float *out, float *in, uint in_size) {
+    exclusive_scan_recursive(out, in, in_size);
 }
 
+// Per-block state published to global memory
+// status: 0 = EMPTY, 1 = AGG_READY (total written), 2 = PREFIX_READY (prefix written)
+struct BlockState {
+    float total;            // aggregate sum of this block's tile
+    float prefix;           // exclusive prefix sum of all blocks before this one
+    volatile int status;    // volatile to prevent caching across SMs
+};
+
+// GONE
+
+// Decoupled look-back exclusive scan kernel
+// out[0] = 0, out[i] = sum_{j=0}^{i-1} in[j]
+__global__ void decoupled_lookback_exclusive_scan(const float* __restrict__ d_in,
+                                                  float* __restrict__ d_out,
+                                                  BlockState* __restrict__ d_state,
+                                                  int N)
+{
+    const int b   = blockIdx.x;
+    const int tid = threadIdx.x;
+    const int gid = b * blockDim.x + tid;
+    const bool in_range = (gid < N);
+
+    // 1) Local block scan (inclusive) and convert to exclusive per-element
+    float x = in_range ? d_in[gid] : identity();
+    __shared__ float block_total;
+    float inclusive = block_inclusive_scan(x, &block_total);
+    float exclusive = inclusive - x;  // per-element exclusive within the block
+
+    // 2) Publish this block's aggregate total and mark AGG_READY
+    if (tid == blockDim.x - 1) {
+        d_state[b].total = block_total;
+        __threadfence();           // make total visible before status
+        d_state[b].status = 1;     // AGG_READY
+        __threadfence();           // make status visible
+    }
+    __syncthreads();
+
+    // 3) Compute this block's prefix via decoupled look-back (robust, no skip pointers)
+    __shared__ float block_prefix;
+    if (tid == 0) {
+        float prefix = 0.0f;
+
+        if (b == 0) {
+            // First block: prefix is 0 (exclusive semantics)
+            prefix = 0.0f;
+        } else {
+            int j = b - 1;
+            while (true) {
+                // Wait until predecessor has at least AGG_READY
+                while (d_state[j].status == 0) {
+                    // busy wait; relies on forward progress of earlier blocks
+                }
+
+                int st = d_state[j].status;
+                if (st == 2) {
+                    // Predecessor has cached prefix; offset(b) needs prefix(j) + total(j)
+                    prefix += d_state[j].prefix + d_state[j].total;
+                    break;
+                } else { // st == 1 (AGG_READY)
+                    // Accumulate this predecessor's total and continue looking back
+                    prefix += d_state[j].total;
+                    if (j == 0) break; // reached the beginning
+                    --j;
+                }
+            }
+        }
+
+        // Publish this block's PREFIX and mark PREFIX_READY
+        d_state[b].prefix = prefix;
+        __threadfence();           // make prefix visible
+        d_state[b].status = 2;     // PREFIX_READY
+        __threadfence();           // make status visible
+
+        block_prefix = prefix;
+    }
+    __syncthreads();
+
+    // 4) Add block prefix to per-element exclusive results to globalize
+    if (in_range) {
+        d_out[gid] = exclusive + block_prefix;
+    }
+}
+
+// Host API: decoupled look-back exclusive scan for float
+void exclusive_scan_float_dlb(float* d_out, const float* d_in, int N)
+{
+    const int blockSize = BLOCK_SIZE;
+    const int numBlocks = (N + blockSize - 1) / blockSize;
+
+    BlockState* d_state = nullptr;
+    cudaMalloc(&d_state, sizeof(BlockState) * numBlocks);
+    cudaMemset((void*)d_state, 0, sizeof(BlockState) * numBlocks); // status=0
+
+    decoupled_lookback_exclusive_scan<<<numBlocks, blockSize>>>(d_in, d_out, d_state, N);
+
+    cudaFree(d_state);
+}
