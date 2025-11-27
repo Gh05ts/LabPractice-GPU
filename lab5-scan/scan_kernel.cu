@@ -1,4 +1,7 @@
-#define BLOCK_SIZE 256
+#define BLOCK_SIZE 512
+#define WARP_SIZE 32
+#define LANE_MASK 31
+#define LANE_LOG 5
 
 // Each block can have 0, 1, 2 status 
 // 0 means computing local sum
@@ -13,8 +16,8 @@ struct BlockState {
 __device__ __forceinline__ float identity() { return 0.0f; }
 
 __device__ __forceinline__ float warp_inclusive_scan(float val, unsigned mask = 0xFFFFFFFFu) {
-    const int lane = threadIdx.x & 31;
-    for (int offset = 1; offset < 32; offset <<= 1) {
+    const int lane = threadIdx.x & LANE_MASK;
+    for (int offset = 1; offset < WARP_SIZE; offset <<= 1) {
         float n = __shfl_up_sync(mask, val, offset);
         if (lane >= offset) val += n;
     }
@@ -22,20 +25,20 @@ __device__ __forceinline__ float warp_inclusive_scan(float val, unsigned mask = 
 }
 
 __device__ float block_inclusive_scan(float val, float* block_total_out) {
-    __shared__ float warp_totals[BLOCK_SIZE / 32];
+    __shared__ float warp_totals[BLOCK_SIZE / WARP_SIZE];
 
-    const int lane = threadIdx.x & 31;
-    const int warp = threadIdx.x >> 5;
+    const int lane = threadIdx.x & LANE_MASK;
+    const int warp = threadIdx.x >> LANE_LOG;
 
     float scanned = warp_inclusive_scan(val);
 
-    if (lane == 31) warp_totals[warp] = scanned;
+    if (lane == WARP_SIZE - 1) warp_totals[warp] = scanned;
     __syncthreads();
 
     if (warp == 0) {
-        float wt = (lane < (BLOCK_SIZE / 32)) ? warp_totals[lane] : identity();
+        float wt = (lane < (BLOCK_SIZE / WARP_SIZE)) ? warp_totals[lane] : identity();
         float wt_scanned = warp_inclusive_scan(wt);
-        if (lane < (BLOCK_SIZE / 32)) warp_totals[lane] = wt_scanned;
+        if (lane < (BLOCK_SIZE / WARP_SIZE)) warp_totals[lane] = wt_scanned;
     }
     __syncthreads();
 
