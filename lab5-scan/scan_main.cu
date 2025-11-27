@@ -78,15 +78,7 @@ int main(int argc, char* argv[])
     printf("Launching kernel..."); fflush(stdout);
     startTime(&timer);
 
-
-    // exclusive_scan_float_hier(out_d, in_d, num_elements);
-    sum_scan_blelloch(out_d, in_d, num_elements);
-    // exclusive_scan_float_dlb_fp64_all(out_d, in_d, num_elements);
-    // if (num_elements > 2200000) {
-    //     preScan(out_d, in_d, num_elements);
-    // } else {
-    // }
-
+    prescan(out_d, in_d, num_elements);
 
 	cuda_ret = cudaDeviceSynchronize();
 	if(cuda_ret != cudaSuccess) FATAL("Unable to launch/execute kernel");
